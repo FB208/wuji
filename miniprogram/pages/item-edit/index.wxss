@@ -1,0 +1,53 @@
+.edit {
+  padding: 32rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 32rpx;
+}
+
+.photo-wrap {
+  position: relative;
+  overflow: hidden;
+}
+
+.photo {
+  width: 100%;
+  height: 480rpx;
+  display: block;
+  background: #eeeeee;
+}
+
+.photo-tip {
+  position: absolute;
+  right: 20rpx;
+  bottom: 20rpx;
+  padding: 8rpx 24rpx;
+  background: #ffd84d;
+  border: 4rpx solid #111111;
+  border-radius: 12rpx;
+  font-size: 24rpx;
+  font-weight: 700;
+}
+
+.field {
+  padding: 24rpx 28rpx;
+  background: #ffffff;
+}
+
+.field.readonly {
+  background: #f3f0e4;
+}
+
+.label {
+  font-size: 26rpx;
+  font-weight: 700;
+  margin-bottom: 12rpx;
+}
+
+.input {
+  font-size: 32rpx;
+}
+
+.record-text {
+  word-break: break-all;
+}

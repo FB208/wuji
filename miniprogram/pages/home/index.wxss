@@ -1,0 +1,70 @@
+.home {
+  padding: 32rpx;
+  padding-bottom: 60rpx;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brand {
+  font-size: 48rpx;
+  font-weight: 700;
+}
+
+.family {
+  padding: 12rpx 28rpx;
+  background: #ff9db5;
+  font-weight: 700;
+  font-size: 28rpx;
+}
+
+/* 主操作卡片：首屏可见、层级最高（文档 8.1） */
+.actions {
+  margin-top: 40rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 32rpx;
+}
+
+.action-card {
+  padding: 56rpx 40rpx;
+}
+
+.action-card.record {
+  background: #ffd84d;
+}
+
+.action-card.search {
+  background: #8ec5ff;
+}
+
+.action-title {
+  font-size: 48rpx;
+  font-weight: 700;
+}
+
+.action-desc {
+  margin-top: 12rpx;
+  font-size: 28rpx;
+}
+
+.recent-title {
+  margin-top: 48rpx;
+  margin-bottom: 24rpx;
+  font-size: 34rpx;
+  font-weight: 700;
+}
+
+.recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+}
+
+.empty {
+  padding: 40rpx 0;
+  text-align: center;
+}

@@ -1,0 +1,7 @@
+<view
+  class="btn brutal-pressable color-{{color}} size-{{size}} {{disabled ? 'disabled' : ''}}"
+  bindtap="onTap"
+>
+  <slot></slot>
+  <text wx:if="{{text}}">{{text}}</text>
+</view>

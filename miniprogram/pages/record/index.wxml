@@ -1,0 +1,58 @@
+<view class="record-page">
+  <!-- 照片区：相机取景或照片预览（文档 4.2） -->
+  <view class="photo-area brutal-card">
+    <block wx:if="{{state === 'CAMERA'}}">
+      <camera
+        wx:if="{{!cameraError}}"
+        class="camera"
+        device-position="back"
+        flash="off"
+        binderror="onCameraError"
+      />
+      <view wx:else class="camera-error">
+        <view>相机不可用</view>
+        <view class="camera-error-actions">
+          <view class="mini-btn brutal-pressable" bindtap="openSetting">去设置</view>
+          <view class="mini-btn brutal-pressable" bindtap="chooseFromAlbum">从相册选择</view>
+        </view>
+      </view>
+    </block>
+    <block wx:else>
+      <image class="preview" src="{{photoPath}}" mode="aspectFill" />
+      <view
+        wx:if="{{state === 'READY'}}"
+        class="retake mini-btn brutal-pressable"
+        bindtap="retake"
+      >重拍</view>
+    </block>
+  </view>
+
+  <!-- 引导区（文档 9.3） -->
+  <view class="guide">说清楚是什么，放在哪里。</view>
+
+  <!-- 主操作区 -->
+  <view class="main-action">
+    <block wx:if="{{state === 'CAMERA'}}">
+      <view class="shutter brutal-pressable" bindtap="takePhoto"></view>
+      <view class="album-entry text-hint" bindtap="chooseFromAlbum">从相册选择</view>
+    </block>
+    <hold-to-talk
+      wx:elif="{{state === 'READY' || state === 'RECORDING'}}"
+      idle-text="按住说话"
+      bind:recordstart="onRecordStart"
+      bind:recordcancel="onRecordCancel"
+      bind:recordfinish="onRecordFinish"
+      bind:recorderror="onRecordError"
+      bind:permissiondenied="onPermissionDenied"
+    />
+  </view>
+
+  <!-- 状态遮罩：上传 / 入库 / 完成 / 失败 -->
+  <status-panel
+    visible="{{state === 'UPLOADING' || state === 'SAVING' || state === 'SUCCESS' || state === 'FAILED'}}"
+    text="{{statusText}}"
+    error="{{state === 'FAILED'}}"
+    retry-text="重新提交"
+    bind:retry="onRetry"
+  />
+</view>

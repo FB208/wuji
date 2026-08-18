@@ -1,0 +1,36 @@
+.launch {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 40rpx;
+  padding: 48rpx;
+}
+
+.logo {
+  width: 240rpx;
+  height: 240rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 72rpx;
+  font-weight: 700;
+  background: #ffd84d;
+}
+
+.slogan {
+  font-size: 30rpx;
+  color: #555555;
+}
+
+.status {
+  font-size: 28rpx;
+  color: #555555;
+}
+
+.retry {
+  padding: 24rpx 64rpx;
+  background: #ffd84d;
+  font-weight: 700;
+}

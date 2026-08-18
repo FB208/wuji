@@ -1,0 +1,43 @@
+{
+  "pages": [
+    "pages/launch/index",
+    "pages/home/index",
+    "pages/record/index",
+    "pages/search/index",
+    "pages/items/index",
+    "pages/item-detail/index",
+    "pages/item-edit/index",
+    "pages/profile/index",
+    "pages/family/index",
+    "pages/family-join/index"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#F8F5EA",
+    "navigationBarTitleText": "唔叽",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#F8F5EA"
+  },
+  "tabBar": {
+    "color": "#111111",
+    "selectedColor": "#111111",
+    "backgroundColor": "#F8F5EA",
+    "borderStyle": "black",
+    "list": [
+      { "pagePath": "pages/home/index", "text": "首页" },
+      { "pagePath": "pages/items/index", "text": "物品" },
+      { "pagePath": "pages/profile/index", "text": "我的" }
+    ]
+  },
+  "permission": {
+    "scope.record": {
+      "desc": "录音仅用于记录和查找物品，不用于其他用途"
+    },
+    "scope.camera": {
+      "desc": "拍照仅用于记录物品外观"
+    }
+  },
+  "requiredPrivateInfos": [],
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

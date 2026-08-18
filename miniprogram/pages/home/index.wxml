@@ -1,0 +1,30 @@
+<view class="home">
+  <view class="top">
+    <view class="brand">唔叽</view>
+    <view class="family brutal-card brutal-pressable" bindtap="onSwitchFamily">
+      {{familyName || "我的家"}} ▾
+    </view>
+  </view>
+
+  <view class="actions">
+    <view class="action-card brutal-card brutal-pressable record" bindtap="goRecord">
+      <view class="action-title">收起来</view>
+      <view class="action-desc">拍照 + 说一句</view>
+    </view>
+    <view class="action-card brutal-card brutal-pressable search" bindtap="goSearch">
+      <view class="action-title">找东西</view>
+      <view class="action-desc">说出要找什么</view>
+    </view>
+  </view>
+
+  <view class="recent-title">最近记录</view>
+  <view wx:if="{{recentItems.length > 0}}" class="recent-list">
+    <item-card
+      wx:for="{{recentItems}}"
+      wx:key="id"
+      item="{{item}}"
+      bind:tap="onItemTap"
+    />
+  </view>
+  <view wx:elif="{{loaded}}" class="empty text-hint">还没有收纳记录。</view>
+</view>

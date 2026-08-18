@@ -1,0 +1,33 @@
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 4rpx solid #111111;
+  border-radius: 20rpx;
+  box-shadow: 8rpx 8rpx 0 #111111;
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #111111;
+  padding: 24rpx 32rpx;
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+
+.btn:active {
+  transform: translate(6rpx, 6rpx);
+  box-shadow: 2rpx 2rpx 0 #111111;
+}
+
+.color-yellow { background: #ffd84d; }
+.color-blue { background: #8ec5ff; }
+.color-green { background: #77dfa0; }
+.color-pink { background: #ff9db5; }
+.color-white { background: #ffffff; }
+
+.size-large {
+  padding: 36rpx 40rpx;
+  font-size: 36rpx;
+}
+
+.disabled {
+  opacity: 0.5;
+}

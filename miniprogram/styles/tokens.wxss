@@ -1,0 +1,42 @@
+/* Neubrutalism 视觉令牌（文档 9.1） */
+page {
+  --bg: #f8f5ea;
+  --yellow: #ffd84d;
+  --blue: #8ec5ff;
+  --green: #77dfa0;
+  --pink: #ff9db5;
+  --ink: #111111;
+  --border: 4rpx solid #111111;
+  --shadow: 8rpx 8rpx 0 #111111;
+  --radius: 20rpx;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 30rpx;
+}
+
+.brutal-card {
+  background: #ffffff;
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.brutal-pressable {
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+
+.brutal-pressable:active,
+.brutal-pressed {
+  transform: translate(6rpx, 6rpx);
+  box-shadow: 2rpx 2rpx 0 #111111;
+}
+
+.page-title {
+  font-size: 48rpx;
+  font-weight: 700;
+}
+
+.text-hint {
+  font-size: 26rpx;
+  color: #555555;
+}

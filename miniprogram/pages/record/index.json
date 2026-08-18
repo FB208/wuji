@@ -1,0 +1,8 @@
+{
+  "navigationBarTitleText": "收起来",
+  "disableScroll": true,
+  "usingComponents": {
+    "hold-to-talk": "/components/hold-to-talk/index",
+    "status-panel": "/components/status-panel/index"
+  }
+}

@@ -1,0 +1,23 @@
+<view class="edit">
+  <view class="photo-wrap brutal-card" bindtap="retakePhoto">
+    <image class="photo" src="{{newPhotoPath || imageUrl}}" mode="aspectFill" />
+    <view class="photo-tip">点击重新拍摄</view>
+  </view>
+
+  <view class="field brutal-card">
+    <view class="label">名称</view>
+    <input class="input" value="{{name}}" maxlength="128" bindinput="onNameInput" />
+  </view>
+
+  <view class="field brutal-card">
+    <view class="label">位置</view>
+    <input class="input" value="{{locationText}}" maxlength="255" bindinput="onLocationInput" />
+  </view>
+
+  <view class="field brutal-card readonly">
+    <view class="label">记录文字（只读）</view>
+    <view class="record-text text-hint">{{recordText}}</view>
+  </view>
+
+  <brutal-button text="{{saving ? '保存中…' : '保存'}}" color="green" size="large" disabled="{{saving}}" bind:tap="onSave" />
+</view>

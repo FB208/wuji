@@ -1,0 +1,65 @@
+.profile {
+  padding: 32rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 40rpx;
+  padding-bottom: 80rpx;
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  padding: 32rpx;
+  background: #ffd84d;
+}
+
+.avatar {
+  width: 120rpx;
+  height: 120rpx;
+  border: 4rpx solid #111111;
+  border-radius: 50%;
+  background: #ffffff;
+}
+
+.avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 48rpx;
+  font-weight: 700;
+}
+
+.nickname {
+  font-size: 36rpx;
+  font-weight: 700;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.group-title {
+  font-size: 30rpx;
+  font-weight: 700;
+}
+
+.cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28rpx;
+  background: #ffffff;
+  font-size: 30rpx;
+}
+
+.cell-value {
+  color: #555555;
+  font-size: 28rpx;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

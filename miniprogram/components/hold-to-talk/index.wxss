@@ -1,0 +1,29 @@
+.talk-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 40rpx 0;
+  background: #ffd84d;
+  border: 4rpx solid #111111;
+  border-radius: 20rpx;
+  box-shadow: 8rpx 8rpx 0 #111111;
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #111111;
+}
+
+/* 录音中按钮下压并显示计时（文档 8.2） */
+.recording {
+  transform: translate(6rpx, 6rpx);
+  box-shadow: 2rpx 2rpx 0 #111111;
+  background: #77dfa0;
+}
+
+.cancel {
+  background: #ff9db5;
+}
+
+.disabled {
+  opacity: 0.5;
+}

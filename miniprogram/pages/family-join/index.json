@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "加入家庭组",
+  "usingComponents": {
+    "brutal-button": "/components/brutal-button/index"
+  }
+}

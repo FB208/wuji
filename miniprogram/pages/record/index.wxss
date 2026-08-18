@@ -1,0 +1,87 @@
+.record-page {
+  min-height: 100vh;
+  padding: 32rpx;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 4:3 照片容器（文档 8.2） */
+.photo-area {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  background: #dddddd;
+}
+
+.camera,
+.preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.camera-error {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24rpx;
+  font-weight: 700;
+}
+
+.camera-error-actions {
+  display: flex;
+  gap: 24rpx;
+}
+
+.mini-btn {
+  padding: 12rpx 28rpx;
+  background: #ffd84d;
+  border: 4rpx solid #111111;
+  border-radius: 12rpx;
+  box-shadow: 4rpx 4rpx 0 #111111;
+  font-size: 26rpx;
+  font-weight: 700;
+}
+
+.retake {
+  position: absolute;
+  top: 20rpx;
+  right: 20rpx;
+}
+
+.guide {
+  margin-top: 32rpx;
+  text-align: center;
+  font-size: 30rpx;
+  color: #555555;
+}
+
+.main-action {
+  margin-top: 48rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24rpx;
+  /* 按住说话宽度占可用区域 80% 以上（文档 8.2） */
+  padding: 0 40rpx;
+}
+
+.main-action hold-to-talk {
+  width: 100%;
+}
+
+.shutter {
+  width: 140rpx;
+  height: 140rpx;
+  border-radius: 50%;
+  background: #ffd84d;
+  border: 6rpx solid #111111;
+  box-shadow: 8rpx 8rpx 0 #111111;
+}
+
+.album-entry {
+  padding: 8rpx;
+}

@@ -1,0 +1,66 @@
+<view class="search-page">
+  <!-- 重新开始（文档 8.3） -->
+  <view class="toolbar">
+    <view class="clear-btn brutal-pressable" bindtap="onClear">清空</view>
+  </view>
+
+  <!-- 结果区 -->
+  <scroll-view scroll-y class="result-area">
+    <view wx:if="{{state === 'ready'}}" class="placeholder text-hint">
+      说出要找的物品，例如“备用路由器放哪了？”
+    </view>
+
+    <view wx:if="{{state === 'searching'}}" class="placeholder">正在查找</view>
+
+    <view wx:if="{{lastQuery && state !== 'searching' && state !== 'ready'}}" class="query-line text-hint">
+      “{{lastQuery}}”
+    </view>
+
+    <block wx:if="{{state === 'found'}}">
+      <item-card item="{{items[0]}}" mode="big" bind:tap="onItemTap" />
+    </block>
+
+    <block wx:if="{{state === 'multiple'}}">
+      <view class="prompt-card brutal-card">{{prompt}}</view>
+      <view class="candidate-list">
+        <item-card
+          wx:for="{{items}}"
+          wx:key="id"
+          item="{{item}}"
+          bind:tap="onItemTap"
+        />
+      </view>
+    </block>
+
+    <view wx:if="{{state === 'not_found'}}" class="prompt-card brutal-card">未找到记录，可换个说法。</view>
+
+    <block wx:if="{{state === 'error'}}">
+      <view class="prompt-card brutal-card error">{{prompt}}</view>
+      <view class="retry-btn brutal-pressable" bindtap="onRetry">重新查找</view>
+    </block>
+  </scroll-view>
+
+  <!-- 输入区：录音为主，文字入口降级（文档 5.3） -->
+  <view class="input-area">
+    <view wx:if="{{showTextInput}}" class="text-input-row">
+      <input
+        class="text-input"
+        value="{{textQuery}}"
+        placeholder="输入要找的物品"
+        confirm-type="search"
+        bindinput="onTextInput"
+        bindconfirm="onTextSubmit"
+      />
+      <view class="send-btn brutal-pressable" bindtap="onTextSubmit">查找</view>
+    </view>
+    <hold-to-talk
+      idle-text="按住说要找什么"
+      bind:recordfinish="onRecordFinish"
+      bind:recorderror="onRecordError"
+      bind:permissiondenied="onPermissionDenied"
+    />
+    <view class="keyboard-entry text-hint" bindtap="toggleTextInput">
+      {{showTextInput ? "收起键盘输入" : "用键盘输入"}}
+    </view>
+  </view>
+</view>

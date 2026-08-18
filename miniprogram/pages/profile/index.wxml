@@ -1,0 +1,54 @@
+<view class="profile">
+  <!-- 账号 -->
+  <view class="account brutal-card">
+    <image wx:if="{{avatarUrl}}" class="avatar" src="{{avatarUrl}}" />
+    <view wx:else class="avatar avatar-fallback">唔</view>
+    <view class="account-info">
+      <view class="nickname">{{nickname}}</view>
+      <view class="text-hint">已登录</view>
+    </view>
+  </view>
+
+  <!-- 家庭 -->
+  <view class="group">
+    <view class="group-title">家庭</view>
+    <view class="cell brutal-card brutal-pressable" bindtap="onSwitchFamily">
+      <view>当前家庭组</view>
+      <view class="cell-value">{{familyName}} ▾</view>
+    </view>
+    <view class="cell brutal-card brutal-pressable" bindtap="goFamily">
+      <view>成员管理与邀请</view>
+      <view class="cell-value">{{familyCount}} 个家庭组 ›</view>
+    </view>
+    <view class="cell brutal-card brutal-pressable" bindtap="onCreateFamily">
+      <view>创建家庭组</view>
+      <view class="cell-value">›</view>
+    </view>
+  </view>
+
+  <!-- 数据 -->
+  <view class="group">
+    <view class="group-title">数据</view>
+    <view class="cell brutal-card">
+      <view>当前家庭组物品数量</view>
+      <view class="cell-value">{{itemCount}}</view>
+    </view>
+  </view>
+
+  <!-- 关于 -->
+  <view class="group">
+    <view class="group-title">关于</view>
+    <view class="cell brutal-card brutal-pressable" bindtap="onPrivacy">
+      <view>隐私说明</view>
+      <view class="cell-value">›</view>
+    </view>
+    <view class="cell brutal-card brutal-pressable" bindtap="onFeedback">
+      <view>问题反馈</view>
+      <view class="cell-value">›</view>
+    </view>
+    <view class="cell brutal-card">
+      <view>版本</view>
+      <view class="cell-value">{{version}}</view>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,13 @@
+@import "styles/tokens.wxss";
+
+page {
+  box-sizing: border-box;
+}
+
+view,
+text,
+image,
+button,
+input {
+  box-sizing: border-box;
+}

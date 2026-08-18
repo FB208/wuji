@@ -1,0 +1,136 @@
+"""数据访问层。所有物品查询必须同时包含 family_id 和 status=1（文档 12.4）。"""
+from datetime import datetime, timezone
+
+from sqlalchemy import func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.tables import Family, FamilyMember, IdempotencyRecord, Item, UploadedImage, User
+
+
+# ---------- 用户 ----------
+async def get_user_by_openid(db: AsyncSession, openid: str) -> User | None:
+    return (await db.execute(select(User).where(User.openid == openid))).scalar_one_or_none()
+
+
+async def get_user(db: AsyncSession, user_id: int) -> User | None:
+    return await db.get(User, user_id)
+
+
+# ---------- 家庭组 ----------
+async def get_family(db: AsyncSession, family_id: int) -> Family | None:
+    return await db.get(Family, family_id)
+
+
+async def get_membership(db: AsyncSession, family_id: int, user_id: int) -> FamilyMember | None:
+    stmt = select(FamilyMember).where(
+        FamilyMember.family_id == family_id, FamilyMember.user_id == user_id
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def list_user_families(db: AsyncSession, user_id: int) -> list[tuple[Family, str]]:
+    stmt = (
+        select(Family, FamilyMember.role)
+        .join(FamilyMember, FamilyMember.family_id == Family.id)
+        .where(FamilyMember.user_id == user_id)
+        .order_by(Family.id)
+    )
+    return [(row[0], row[1]) for row in (await db.execute(stmt)).all()]
+
+
+async def count_family_members(db: AsyncSession, family_id: int) -> int:
+    stmt = select(func.count()).select_from(FamilyMember).where(FamilyMember.family_id == family_id)
+    return (await db.execute(stmt)).scalar_one()
+
+
+async def list_family_members(db: AsyncSession, family_id: int) -> list[tuple[FamilyMember, User]]:
+    stmt = (
+        select(FamilyMember, User)
+        .join(User, User.id == FamilyMember.user_id)
+        .where(FamilyMember.family_id == family_id)
+        .order_by(FamilyMember.created_at)
+    )
+    return [(row[0], row[1]) for row in (await db.execute(stmt)).all()]
+
+
+# ---------- 物品 ----------
+def _active_items_stmt(family_id: int):
+    return select(Item).where(Item.family_id == family_id, Item.status == 1)
+
+
+async def get_active_item(db: AsyncSession, family_id: int, item_id: int) -> Item | None:
+    stmt = _active_items_stmt(family_id).where(Item.id == item_id)
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def list_active_items(db: AsyncSession, family_id: int) -> list[Item]:
+    stmt = _active_items_stmt(family_id).order_by(Item.updated_at.desc())
+    return list((await db.execute(stmt)).scalars().all())
+
+
+async def list_active_items_by_ids(db: AsyncSession, family_id: int, item_ids: list[int]) -> list[Item]:
+    if not item_ids:
+        return []
+    stmt = _active_items_stmt(family_id).where(Item.id.in_(item_ids))
+    items = {item.id: item for item in (await db.execute(stmt)).scalars().all()}
+    # 保持传入顺序（相关度排序，文档 10.4）
+    return [items[i] for i in item_ids if i in items]
+
+
+async def search_items_page(
+    db: AsyncSession, family_id: int, q: str | None, page: int, page_size: int
+) -> tuple[list[Item], int]:
+    stmt = _active_items_stmt(family_id)
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(
+            or_(Item.name.like(like), Item.location_text.like(like), Item.record_text.like(like))
+        )
+    total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
+    stmt = stmt.order_by(Item.updated_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    items = list((await db.execute(stmt)).scalars().all())
+    return items, total
+
+
+async def count_active_items(db: AsyncSession, family_id: int) -> int:
+    stmt = select(func.count()).select_from(Item).where(Item.family_id == family_id, Item.status == 1)
+    return (await db.execute(stmt)).scalar_one()
+
+
+# ---------- 幂等 ----------
+async def get_idempotency(db: AsyncSession, user_id: int, idem_key: str) -> IdempotencyRecord | None:
+    stmt = select(IdempotencyRecord).where(
+        IdempotencyRecord.user_id == user_id, IdempotencyRecord.idem_key == idem_key
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+# ---------- 图片登记 ----------
+async def get_uploaded_image_by_key(db: AsyncSession, object_key: str) -> UploadedImage | None:
+    stmt = select(UploadedImage).where(UploadedImage.object_key == object_key)
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def get_uploaded_image_by_url(db: AsyncSession, image_url: str) -> UploadedImage | None:
+    stmt = select(UploadedImage).where(UploadedImage.image_url == image_url)
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def mark_image_pending_delete(db: AsyncSession, image_url: str, delete_after: datetime) -> None:
+    record = await get_uploaded_image_by_url(db, image_url)
+    if record is not None:
+        record.used = 2
+        record.delete_after = delete_after
+
+
+async def list_cleanable_images(db: AsyncSession, unused_before: datetime) -> list[UploadedImage]:
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    stmt = select(UploadedImage).where(
+        or_(
+            # 未入库的临时图片
+            (UploadedImage.used == 0) & (UploadedImage.created_at < unused_before),
+            # 被替换或软删除后的延迟清理图片
+            (UploadedImage.used == 2) & (UploadedImage.delete_after < now),
+        )
+    ).limit(200)
+    return list((await db.execute(stmt)).scalars().all())

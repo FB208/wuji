@@ -1,0 +1,4 @@
+{
+  "desc": "禁止被索引",
+  "rules": [{ "action": "disallow", "page": "*" }]
+}

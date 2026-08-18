@@ -1,0 +1,24 @@
+<view class="detail" wx:if="{{item}}">
+  <view class="photo-wrap brutal-card" bindtap="previewImage">
+    <image
+      wx:if="{{!imageFailed}}"
+      class="photo"
+      src="{{item.image_url}}"
+      mode="aspectFill"
+      binderror="onImageError"
+    />
+    <view wx:else class="photo photo-failed">图片加载失败</view>
+  </view>
+
+  <view class="info brutal-card">
+    <view class="name">{{item.name}}</view>
+    <view class="location">{{item.location_text}}</view>
+    <view class="record-text text-hint">“{{item.record_text}}”</view>
+    <view class="time text-hint">更新于 {{updatedAtText}}</view>
+  </view>
+
+  <view class="ops">
+    <view class="op-btn edit brutal-pressable" bindtap="goEdit">修改记录</view>
+    <view class="op-btn delete brutal-pressable" bindtap="onDelete">删除记录</view>
+  </view>
+</view>

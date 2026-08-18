@@ -1,0 +1,22 @@
+[project]
+name = "wuji-backend"
+version = "1.0.0"
+description = "唔叽 · 家庭收纳工具后端"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sqlalchemy>=2.0",
+    "asyncmy>=0.2.9",
+    "httpx>=0.27",
+    "boto3>=1.34",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "aiosqlite>=0.20"]
+
+[tool.setuptools]
+packages = ["app"]

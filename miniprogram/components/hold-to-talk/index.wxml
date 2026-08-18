@@ -1,0 +1,11 @@
+<view
+  class="talk-btn {{recording ? 'recording' : ''}} {{willCancel ? 'cancel' : ''}} {{disabled ? 'disabled' : ''}}"
+  bind:touchstart="onTouchStart"
+  bind:touchmove="onTouchMove"
+  bind:touchend="onTouchEnd"
+  bind:touchcancel="onTouchEnd"
+>
+  <block wx:if="{{!recording}}">{{idleText}}</block>
+  <block wx:elif="{{willCancel}}">松开取消</block>
+  <block wx:else>松开完成 · 上滑取消（{{seconds}}s）</block>
+</view>
