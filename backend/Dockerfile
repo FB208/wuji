@@ -9,8 +9,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app
+COPY start.sh ./
+# Windows 检出为 CRLF 时仍可在 Linux 容器中启动
+RUN sed -i 's/\r$//' start.sh
 
 EXPOSE 8000
-# 用 python -m 启动，使工作目录进入 sys.path：
-# 1) app 从 /srv/wuji/app 源码导入；2) check_migration 能找到 /srv/wuji/alembic
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# python -m 使 /srv/wuji 进入 sys.path：app 从源码导入，check_migration 能找到 alembic/
+ENTRYPOINT ["/bin/bash", "/srv/wuji/start.sh"]
