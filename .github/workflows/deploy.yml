@@ -3,7 +3,7 @@ name: Deploy wuji backend
 on:
   push:
     tags:
-      - 'wuji-v*.*.*'
+      - 'v*.*.*'
 
 permissions:
   contents: read
@@ -36,8 +36,8 @@ jobs:
           TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
         run: |
           $ErrorActionPreference = 'Stop'
-          if ($env:GITHUB_REF_NAME -cnotmatch '^wuji-v[0-9]+\.[0-9]+\.[0-9]+$') {
-              throw 'Release tag must match wuji-v1.0.0.'
+          if ($env:GITHUB_REF_NAME -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') {
+              throw 'Release tag must match v1.0.0.'
           }
           $required = @(
               'REGISTRY', 'REGISTRY_USERNAME', 'REGISTRY_PASSWORD',
