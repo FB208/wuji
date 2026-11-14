@@ -1,4 +1,8 @@
 <view class="edit">
+  <view wx:if="{{busy}}" class="text-hint">{{saving ? "正在保存" : "正在加载"}}</view>
+  <view wx:if="{{errorText && !busy}}" class="empty-text">{{errorText}}</view>
+  <brutal-button wx:if="{{noFamily && !busy}}" text="去创建或加入家庭" color="yellow" bind:tap="goProfile" />
+  <block wx:if="{{ready && loaded && !busy}}">
   <view class="photo-wrap brutal-card" bindtap="retakePhoto">
     <image class="photo" src="{{newPhotoPath || imageUrl}}" mode="aspectFill" />
     <view class="photo-tip">点击重新拍摄</view>
@@ -6,12 +10,12 @@
 
   <view class="field brutal-card">
     <view class="label">名称</view>
-    <input class="input" value="{{name}}" maxlength="128" bindinput="onNameInput" />
+    <input class="input" value="{{name}}" maxlength="128" disabled="{{!ready || busy || saving || saved || needsRefresh}}" bindinput="onNameInput" />
   </view>
 
   <view class="field brutal-card">
     <view class="label">位置</view>
-    <input class="input" value="{{locationText}}" maxlength="255" bindinput="onLocationInput" />
+    <input class="input" value="{{locationText}}" maxlength="255" disabled="{{!ready || busy || saving || saved || needsRefresh}}" bindinput="onLocationInput" />
   </view>
 
   <view class="field brutal-card readonly">
@@ -19,5 +23,9 @@
     <view class="record-text text-hint">{{recordText}}</view>
   </view>
 
-  <brutal-button text="{{saving ? '保存中…' : '保存'}}" color="green" size="large" disabled="{{saving}}" bind:tap="onSave" />
+  <brutal-button text="{{saving ? '保存中…' : saved ? '已保存' : '保存'}}" color="green" size="large" disabled="{{!ready || busy || saving || saved || needsRefresh}}" bind:tap="onSave" />
+  </block>
+  <brutal-button wx:if="{{needsRefresh && !busy}}" text="刷新确认" color="blue" bind:tap="onRetry" />
+  <brutal-button wx:elif="{{errorText && !busy && !blocked && !noFamily && !saved}}" text="重试" color="blue" bind:tap="onRetry" />
+  <brutal-button text="返回物品列表" color="white" bind:tap="goItems" />
 </view>

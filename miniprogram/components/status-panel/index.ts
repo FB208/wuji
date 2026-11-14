@@ -3,13 +3,18 @@ Component({
   properties: {
     visible: { type: Boolean, value: false },
     text: { type: String, value: "" },
+    secondaryText: { type: String, value: "" },
     /** error 状态显示重试按钮 */
     error: { type: Boolean, value: false },
     retryText: { type: String, value: "重新提交" },
+    secondaryRetryText: { type: String, value: "" },
   },
   methods: {
     onRetry() {
       this.triggerEvent("retry");
+    },
+    onSecondary() {
+      this.triggerEvent("secondary");
     },
     noop() {
       // 拦截穿透点击

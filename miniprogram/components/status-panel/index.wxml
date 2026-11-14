@@ -1,6 +1,8 @@
 <view wx:if="{{visible}}" class="mask" catchtap="noop">
   <view class="panel brutal-card">
     <view class="text">{{text}}</view>
-    <view wx:if="{{error}}" class="retry brutal-pressable" bindtap="onRetry">{{retryText}}</view>
+    <view wx:if="{{secondaryText}}" class="text sub">{{secondaryText}}</view>
+    <view wx:if="{{error && retryText}}" class="retry brutal-pressable" bindtap="onRetry">{{retryText}}</view>
+    <view wx:if="{{error && secondaryRetryText}}" class="retry brutal-pressable" bindtap="onSecondary">{{secondaryRetryText}}</view>
   </view>
 </view>

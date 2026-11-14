@@ -5,7 +5,7 @@
     <view wx:else class="avatar avatar-fallback">唔</view>
     <view class="account-info">
       <view class="nickname">{{nickname}}</view>
-      <view class="text-hint">已登录</view>
+      <view class="text-hint">{{busy ? "正在处理" : ready ? "已登录" : "请重新登录"}}</view>
     </view>
   </view>
 
@@ -24,6 +24,10 @@
       <view>创建家庭组</view>
       <view class="cell-value">›</view>
     </view>
+    <view class="cell brutal-card brutal-pressable" bindtap="onHowToJoin">
+      <view>如何加入家庭</view>
+      <view class="cell-value">›</view>
+    </view>
   </view>
 
   <!-- 数据 -->
@@ -31,7 +35,15 @@
     <view class="group-title">数据</view>
     <view class="cell brutal-card">
       <view>当前家庭组物品数量</view>
-      <view class="cell-value">{{itemCount}}</view>
+      <view class="cell-value">{{itemCount === null ? "—" : itemCount}}</view>
+    </view>
+    <view wx:if="{{!noFamily}}" class="cell brutal-card brutal-pressable" bindtap="onPurgeDeleted">
+      <view>清理已删除记录</view>
+      <view class="cell-value">›</view>
+    </view>
+    <view class="cell brutal-card brutal-pressable" bindtap="onDeleteAccount">
+      <view>注销账号</view>
+      <view class="cell-value">›</view>
     </view>
   </view>
 
@@ -50,5 +62,14 @@
       <view>版本</view>
       <view class="cell-value">{{version}}</view>
     </view>
+  </view>
+
+  <view wx:if="{{errorText}}" class="empty">
+    <view class="empty-text">{{errorText}}</view>
+    <view class="empty-btn brutal-pressable" bindtap="onRetry">重试</view>
+  </view>
+  <view wx:if="{{noFamily && ready && !busy}}" class="empty">
+    <view class="empty-text">还没有家庭</view>
+    <view class="empty-btn brutal-pressable" bindtap="onCreateFamily">创建家庭</view>
   </view>
 </view>

@@ -1,4 +1,8 @@
-<view class="detail" wx:if="{{item}}">
+<view class="detail">
+  <view wx:if="{{busy}}" class="text-hint">正在加载</view>
+  <view wx:if="{{errorText && !busy}}" class="empty-text">{{errorText}}</view>
+  <brutal-button wx:if="{{noFamily && !busy}}" text="去创建或加入家庭" color="yellow" bind:tap="goProfile" />
+  <block wx:if="{{ready && !busy && item}}">
   <view class="photo-wrap brutal-card" bindtap="previewImage">
     <image
       wx:if="{{!imageFailed}}"
@@ -6,6 +10,7 @@
       src="{{item.image_url}}"
       mode="aspectFill"
       binderror="onImageError"
+      data-image-url="{{item.image_url}}"
     />
     <view wx:else class="photo photo-failed">图片加载失败</view>
   </view>
@@ -18,7 +23,11 @@
   </view>
 
   <view class="ops">
-    <view class="op-btn edit brutal-pressable" bindtap="goEdit">修改记录</view>
-    <view class="op-btn delete brutal-pressable" bindtap="onDelete">删除记录</view>
+    <brutal-button text="修改记录" color="yellow" disabled="{{busy || deleting || deleted || needsRefresh}}" bind:tap="goEdit" />
+    <brutal-button text="{{deleting ? '正在删除' : '删除记录'}}" color="pink" disabled="{{busy || deleting || deleted || needsRefresh}}" bind:tap="onDelete" />
   </view>
+  </block>
+  <brutal-button wx:if="{{needsRefresh && !busy}}" text="刷新最新记录" color="blue" disabled="{{deleting}}" bind:tap="onRetry" />
+  <brutal-button wx:elif="{{errorText && !busy && !blocked && !noFamily && !deleted}}" text="重试" color="blue" disabled="{{deleting}}" bind:tap="onRetry" />
+  <brutal-button text="返回物品列表" color="white" bind:tap="goItems" />
 </view>

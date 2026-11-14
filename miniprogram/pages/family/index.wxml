@@ -1,34 +1,56 @@
 <view class="family">
-  <view class="name-card brutal-card {{isOwner ? 'brutal-pressable' : ''}}" bindtap="onRename">
-    <view class="name">{{familyName}}</view>
-    <view wx:if="{{isOwner}}" class="text-hint">点击修改名称</view>
+  <view wx:if="{{busy}}" class="placeholder">正在加载</view>
+
+  <view wx:if="{{errorText}}" class="empty">
+    <view class="empty-text">{{errorText}}</view>
+    <view class="empty-btn brutal-pressable" bindtap="onRetryTap">重试</view>
   </view>
 
-  <brutal-button
-    wx:if="{{isOwner}}"
-    text="邀请家庭成员"
-    color="pink"
-    size="large"
-    bind:tap="onInvite"
-  />
+  <view wx:if="{{noFamily && !busy}}" class="empty">
+    <view class="empty-text">还没有家庭</view>
+    <view class="empty-btn brutal-pressable" bindtap="goList">选择或创建家庭</view>
+  </view>
 
-  <view class="section-title">成员（{{members.length}}）</view>
-  <view class="member-list">
-    <view wx:for="{{members}}" wx:key="user_id" class="member brutal-card">
-      <image wx:if="{{item.avatar_url}}" class="member-avatar" src="{{item.avatar_url}}" />
-      <view wx:else class="member-avatar member-avatar-fallback">唔</view>
-      <view class="member-info">
-        <view class="member-name">{{item.nickname || "微信用户"}}</view>
-        <view class="text-hint">{{item.role === 'owner' ? '所有者' : '成员'}}</view>
-      </view>
-      <view
-        wx:if="{{isOwner && item.role !== 'owner'}}"
-        class="remove-btn brutal-pressable"
-        data-member="{{item}}"
-        bindtap="onRemoveMember"
-      >移除</view>
+  <block wx:if="{{ready && !busy && !noFamily && !errorText}}">
+    <view class="name-card brutal-card {{isOwner ? 'brutal-pressable' : ''}}" bindtap="onRename">
+      <view class="name">{{familyName}}</view>
+      <view wx:if="{{isOwner}}" class="text-hint">点击修改名称</view>
     </view>
-  </view>
 
-  <view wx:if="{{!isOwner}}" class="leave brutal-card brutal-pressable" bindtap="onLeave">退出家庭组</view>
+    <brutal-button
+      wx:if="{{isOwner}}"
+      text="邀请家庭成员"
+      color="pink"
+      size="large"
+      disabled="{{busy}}"
+      bind:tap="onInvite"
+    />
+
+    <view class="section-title">成员（{{members.length}}）</view>
+    <view class="member-list">
+      <view wx:for="{{members}}" wx:key="user_id" class="member brutal-card">
+        <image wx:if="{{item.avatar_url}}" class="member-avatar" src="{{item.avatar_url}}" />
+        <view wx:else class="member-avatar member-avatar-fallback">唔</view>
+        <view class="member-info">
+          <view class="member-name">{{item.nickname || "微信用户"}}</view>
+          <view class="text-hint">{{item.role === 'owner' ? '所有者' : '成员'}}</view>
+        </view>
+        <block wx:if="{{isOwner && item.role !== 'owner' && item.user_id !== currentUserId}}">
+          <view
+            class="remove-btn brutal-pressable"
+            data-id="{{item.user_id}}"
+            bindtap="onTransfer"
+          >转让</view>
+          <view
+            class="remove-btn brutal-pressable"
+            data-id="{{item.user_id}}"
+            bindtap="onRemoveMember"
+          >移除</view>
+        </block>
+      </view>
+    </view>
+
+    <view wx:if="{{!isOwner}}" class="leave brutal-card brutal-pressable" bindtap="onLeave">退出家庭组</view>
+    <view wx:if="{{isOwner}}" class="leave brutal-card brutal-pressable" bindtap="onDissolve">解散家庭组</view>
+  </block>
 </view>

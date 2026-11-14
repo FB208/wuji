@@ -1,6 +1,9 @@
 <view class="launch">
   <view class="logo brutal-card">唔叽</view>
   <view class="slogan">拍一张，说一句，东西不再找不到</view>
-  <view wx:if="{{!failed}}" class="status">正在进入…</view>
-  <view wx:else class="retry brutal-card brutal-pressable" bindtap="onRetry">重新登录</view>
+  <view wx:if="{{busy}}" class="status">正在进入…</view>
+  <block wx:if="{{failed && !busy}}">
+    <view class="status">{{errorText || '登录失败'}}</view>
+    <view class="retry brutal-card brutal-pressable" bindtap="onRetry">重新登录</view>
+  </block>
 </view>

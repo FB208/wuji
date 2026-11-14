@@ -9,7 +9,8 @@
     "pages/item-edit/index",
     "pages/profile/index",
     "pages/family/index",
-    "pages/family-join/index"
+    "pages/family-join/index",
+    "pages/family-list/index"
   ],
   "window": {
     "navigationBarBackgroundColor": "#F8F5EA",

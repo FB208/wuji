@@ -36,3 +36,13 @@ async def me(
             "families": families,
         },
     )
+
+
+@router.delete("/me")
+async def delete_me(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await family_service.delete_account(db, user.id)
+    return ok(request, {"deleted": True})

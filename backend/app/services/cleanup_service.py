@@ -22,7 +22,11 @@ async def cleanup_once() -> int:
     async with SessionLocal() as db:
         images = await repos.list_cleanable_images(db, unused_before)
         for image in images:
-            await rustfs_provider.delete_object(image.object_key)
+            try:
+                await rustfs_provider.delete_object(image.object_key)
+            except Exception as exc:
+                logger.warning("删除对象失败，保留登记待下轮重试：%s %s", image.object_key, exc)
+                continue
             await db.delete(image)
             deleted += 1
         await db.commit()

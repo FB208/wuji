@@ -14,7 +14,7 @@ from app.core.errors import (
     validation_error_handler,
 )
 from app.core.logging import get_logger, setup_logging
-from app.db.session import init_database
+from app.db.session import check_migration
 from app.services.cleanup_service import cleanup_loop
 
 setup_logging()
@@ -23,7 +23,7 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_database()
+    await check_migration()
     cleanup_task = asyncio.create_task(cleanup_loop())
     logger.info("唔叽后端启动完成")
     yield

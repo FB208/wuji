@@ -1,0 +1,28 @@
+<view class="family-list-page">
+  <view wx:if="{{busy}}" class="placeholder">正在加载</view>
+
+  <view wx:if="{{errorText}}" class="empty">
+    <view class="empty-text">{{errorText}}</view>
+    <view class="empty-btn brutal-pressable" bindtap="onRetryTap">重试</view>
+  </view>
+
+  <block wx:if="{{ready && !busy}}">
+    <view wx:if="{{rows.length > 0}}" class="list">
+      <view
+        wx:for="{{rows}}"
+        wx:key="id"
+        class="family-row brutal-card {{item.current ? 'current' : ''}}"
+        data-id="{{item.id}}"
+        bindtap="onPick"
+      >
+        <view class="row-name">{{item.name}}</view>
+        <view wx:if="{{item.current}}" class="row-mark">当前</view>
+      </view>
+    </view>
+
+    <view wx:elif="{{noFamily}}" class="empty">
+      <view class="empty-text">还没有家庭，请创建或加入</view>
+      <view class="empty-btn brutal-pressable" bindtap="goProfile">去个人中心</view>
+    </view>
+  </block>
+</view>

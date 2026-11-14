@@ -16,7 +16,8 @@ async def get_current_user(
     if not authorization.startswith("Bearer "):
         raise auth_required()
     user_id = parse_access_token(authorization[7:].strip())
-    user = await repos.get_user(db, user_id)
+    async with db.begin():
+        user = await repos.get_user(db, user_id)
     if user is None:
         raise auth_required()
     return user

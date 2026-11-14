@@ -1,4 +1,6 @@
 {
   "navigationBarTitleText": "物品详情",
-  "usingComponents": {}
+  "usingComponents": {
+    "brutal-button": "../../components/brutal-button/index"
+  }
 }

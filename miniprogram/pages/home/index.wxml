@@ -2,7 +2,7 @@
   <view class="top">
     <view class="brand">唔叽</view>
     <view class="family brutal-card brutal-pressable" bindtap="onSwitchFamily">
-      {{familyName || "我的家"}} ▾
+      {{familyName || "选择家庭"}} ▾
     </view>
   </view>
 
@@ -26,5 +26,15 @@
       bind:tap="onItemTap"
     />
   </view>
-  <view wx:elif="{{loaded}}" class="empty text-hint">还没有收纳记录。</view>
+  <view wx:elif="{{loaded && !errorText}}" class="empty text-hint">还没有收纳记录。</view>
+  <view wx:if="{{busy}}" class="empty text-hint">正在检查登录状态</view>
+
+  <view wx:if="{{errorText}}" class="empty">
+    <view class="empty-text">{{errorText}}</view>
+    <view class="empty-btn brutal-pressable" bindtap="onRetry">重试</view>
+  </view>
+  <view wx:if="{{noFamily && ready && !busy}}" class="empty">
+    <view class="empty-text">还没有家庭</view>
+    <view class="empty-btn brutal-pressable" bindtap="goProfile">去创建或加入</view>
+  </view>
 </view>

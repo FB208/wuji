@@ -28,7 +28,8 @@
   </view>
 
   <!-- 引导区（文档 9.3） -->
-  <view class="guide">说清楚是什么，放在哪里。</view>
+  <view class="guide">{{secondaryText || '说清楚是什么，放在哪里。'}}</view>
+  <view class="guide text-hint">照片仅用于保存物品外观；语音仅转写为文字，不会保存。</view>
 
   <!-- 主操作区 -->
   <view class="main-action">
@@ -37,8 +38,10 @@
       <view class="album-entry text-hint" bindtap="chooseFromAlbum">从相册选择</view>
     </block>
     <hold-to-talk
+      id="h2t"
       wx:elif="{{state === 'READY' || state === 'RECORDING'}}"
       idle-text="按住说话"
+      disabled="{{processing || !sessionReady}}"
       bind:recordstart="onRecordStart"
       bind:recordcancel="onRecordCancel"
       bind:recordfinish="onRecordFinish"
@@ -51,8 +54,11 @@
   <status-panel
     visible="{{state === 'UPLOADING' || state === 'SAVING' || state === 'SUCCESS' || state === 'FAILED'}}"
     text="{{statusText}}"
+    secondary-text="{{state === 'UPLOADING' ? '照片 ' + imageProgress + '% · 语音 ' + audioProgress + '%' : secondaryText}}"
     error="{{state === 'FAILED'}}"
-    retry-text="重新提交"
+    retry-text="{{primaryLabel}}"
+    secondary-retry-text="{{secondaryLabel}}"
     bind:retry="onRetry"
+    bind:secondary="onSecondary"
   />
 </view>

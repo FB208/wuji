@@ -3,7 +3,7 @@
   bind:touchstart="onTouchStart"
   bind:touchmove="onTouchMove"
   bind:touchend="onTouchEnd"
-  bind:touchcancel="onTouchEnd"
+  bind:touchcancel="onTouchCancel"
 >
   <block wx:if="{{!recording}}">{{idleText}}</block>
   <block wx:elif="{{willCancel}}">松开取消</block>

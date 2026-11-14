@@ -45,6 +45,10 @@ def audio_too_short(message: str = "录音太短，请重新录入") -> AppError
     return AppError("AUDIO_TOO_SHORT", message, status_code=400)
 
 
+def audio_too_long(message: str = "录音超过 60 秒，请重新录入") -> AppError:
+    return AppError("AUDIO_TOO_LONG", message, status_code=400)
+
+
 def transcribe_failed(message: str = "语音识别失败，请重试") -> AppError:
     return AppError("TRANSCRIBE_FAILED", message, status_code=502, retryable=True)
 
@@ -69,6 +73,40 @@ def rate_limited(message: str = "操作太频繁，请稍后重试") -> AppError
     return AppError("RATE_LIMITED", message, status_code=429, retryable=True)
 
 
+def version_conflict(message: str = "数据已被他人修改，请刷新后重试") -> AppError:
+    return AppError("VERSION_CONFLICT", message, status_code=409, retryable=True)
+
+
+def idempotency_conflict(message: str = "请求与之前的记录冲突") -> AppError:
+    return AppError("IDEMPOTENCY_CONFLICT", message, status_code=409)
+
+
+def record_processing(message: str = "请求仍在处理中，请稍后查询结果") -> AppError:
+    err = AppError("RECORD_PROCESSING", message, status_code=409, retryable=True)
+    err.retry_after = 2
+    return err
+
+
+def record_attempt_expired(message: str = "请求结果已过期，请重新提交") -> AppError:
+    return AppError("RECORD_ATTEMPT_EXPIRED", message, status_code=410, retryable=False)
+
+
+def record_attempt_superseded(message: str = "请求已由新的执行接管，请稍后查询结果") -> AppError:
+    return AppError("RECORD_ATTEMPT_SUPERSEDED", message, status_code=409, retryable=True)
+
+
+def idempotency_key_invalid(message: str = "Idempotency-Key 需为 16~128 个字符") -> AppError:
+    return AppError("VALIDATION_ERROR", message, status_code=400)
+
+
+def semantic_budget_exceeded(message: str = "描述过长或物品过多，请拆分后重试") -> AppError:
+    return AppError("SEMANTIC_BUDGET_EXCEEDED", message, status_code=422, retryable=False)
+
+
+def search_context_mismatch(message: str = "查找上下文与家庭组不一致") -> AppError:
+    return AppError("SEARCH_CONTEXT_MISMATCH", message, status_code=409, retryable=False)
+
+
 def ok(request: Request, data: Any) -> dict:
     return {"data": data, "request_id": getattr(request.state, "request_id", "")}
 
@@ -81,10 +119,14 @@ def error_body(request: Request, code: str, message: str, retryable: bool) -> di
 
 
 async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
-    return JSONResponse(
+    response = JSONResponse(
         status_code=exc.status_code,
         content=error_body(request, exc.code, exc.message, exc.retryable),
     )
+    retry_after = getattr(exc, "retry_after", None)
+    if retry_after is not None:
+        response.headers["Retry-After"] = str(retry_after)
+    return response
 
 
 async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:

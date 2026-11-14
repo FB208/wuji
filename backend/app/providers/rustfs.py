@@ -55,10 +55,7 @@ class RustFSProvider:
         def _delete() -> None:
             self._client.delete_object(Bucket=self._settings.rustfs_bucket, Key=object_key)
 
-        try:
-            await asyncio.to_thread(_delete)
-        except Exception:
-            logger.warning("删除对象失败：%s", object_key)
+        await asyncio.to_thread(_delete)
 
 
 rustfs_provider = RustFSProvider()

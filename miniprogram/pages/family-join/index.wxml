@@ -1,24 +1,34 @@
 <view class="join">
-  <block wx:if="{{loaded && !invalid}}">
+  <view wx:if="{{busy}}" class="placeholder">正在加载</view>
+
+  <block wx:if="{{errorText && !busy}}">
+    <view class="invite-card brutal-card">
+      <view class="family-name">{{errorText}}</view>
+    </view>
+    <brutal-button text="重试" color="green" size="large" bind:tap="onRetry" />
+  </block>
+
+  <block wx:if="{{invalid && !busy && !errorText}}">
+    <view class="invite-card brutal-card">
+      <view class="family-name">邀请已失效</view>
+      <view class="desc text-hint">请让家人重新分享邀请。</view>
+    </view>
+    <brutal-button text="回到首页" color="yellow" size="large" bind:tap="goHome" />
+  </block>
+
+  <block wx:if="{{ready && loaded && !invalid && !errorText && !busy}}">
     <view class="invite-card brutal-card">
       <view class="text-hint">{{ownerNickname ? ownerNickname + " 邀请你加入" : "邀请你加入"}}</view>
       <view class="family-name">{{familyName}}</view>
       <view class="desc text-hint">加入后可以查看和记录该家庭组的全部物品。</view>
     </view>
     <brutal-button
-      text="{{joining ? '正在加入…' : '加入家庭'}}"
+      text="{{joined ? '已加入' : (joining ? '正在加入…' : '加入家庭')}}"
       color="green"
       size="large"
-      disabled="{{joining}}"
+      disabled="{{joining || joined}}"
       bind:tap="onJoin"
     />
-  </block>
-
-  <block wx:if="{{loaded && invalid}}">
-    <view class="invite-card brutal-card">
-      <view class="family-name">邀请已失效</view>
-      <view class="desc text-hint">请让家人重新分享邀请。</view>
-    </view>
-    <brutal-button text="回到首页" color="yellow" size="large" bind:tap="goHome" />
+    <brutal-button wx:if="{{joined}}" text="回到首页" color="yellow" size="large" bind:tap="goHome" />
   </block>
 </view>

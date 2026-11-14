@@ -5,18 +5,25 @@ from fastapi import APIRouter, Depends, File, Form, Header, Query, Request, Uplo
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
-from app.core.errors import audio_too_short, ok, search_failed
+from app.core.errors import AppError, audio_too_long, audio_too_short, ok, search_failed
 from app.core.security import rate_limiter
 from app.db.session import get_db
 from app.models.tables import User
 from app.providers.speech import speech_provider
-from app.schemas.schemas import ItemPatchRequest, ItemRecordRequest, SearchTextRequest
+from app.schemas.schemas import (
+    ItemPatchRequest,
+    ItemRecordRequest,
+    SearchTextRequest,
+)
 from app.services import record_service, search_service
+from app.services.family_service import require_membership
 
 router = APIRouter()
 
 # 录音下限约 1 秒（文档 1.4）：以最低码率估算的字节数下限
 MIN_AUDIO_BYTES = 1000
+# 上限 60 秒的宽松字节上限；超长文件直接拒绝
+MAX_AUDIO_BYTES = 4 * 1024 * 1024
 
 
 def _audio_ext(filename: str | None) -> str:
@@ -51,6 +58,8 @@ async def transcribe(
     content = await audio.read()
     if len(content) < MIN_AUDIO_BYTES:
         raise audio_too_short()
+    if len(content) > MAX_AUDIO_BYTES:
+        raise audio_too_long()
     transcript = await speech_provider.transcribe(content, _audio_ext(audio.filename))
     return ok(request, {"transcript": transcript})
 
@@ -85,12 +94,14 @@ async def search_audio(
     content = await audio.read()
     if len(content) < MIN_AUDIO_BYTES:
         raise audio_too_short()
+    if len(content) > MAX_AUDIO_BYTES:
+        raise audio_too_long()
     context = None
     if context_json:
         try:
             context = json.loads(context_json)
         except json.JSONDecodeError as exc:
-            raise search_failed("查找上下文无效") from exc
+            raise AppError("VALIDATION_ERROR", "查找上下文格式无效", status_code=400, retryable=False) from exc
     data = await search_service.search_by_audio(
         db, user.id, family_id, content, _audio_ext(audio.filename), context
     )
@@ -146,7 +157,8 @@ async def patch_item(
     db: AsyncSession = Depends(get_db),
 ):
     data = await record_service.patch_item(
-        db, user.id, family_id, item_id, body.name, body.location_text, body.image_token
+        db, user.id, family_id, item_id, body.name, body.location_text, body.image_token,
+        body.expected_version,
     )
     return ok(request, data)
 
@@ -156,8 +168,9 @@ async def delete_item(
     request: Request,
     item_id: int,
     family_id: int = Query(...),
+    expected_version: int = Query(..., ge=1),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    await record_service.delete_item(db, user.id, family_id, item_id)
+    await record_service.delete_item(db, user.id, family_id, item_id, expected_version)
     return ok(request, {"deleted": True})

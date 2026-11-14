@@ -4,9 +4,9 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.errors import AppError, family_forbidden, not_found
+from app.core.errors import AppError, auth_required, family_forbidden, not_found
 from app.core.security import create_signed_token, verify_signed_token
-from app.models.tables import Family, FamilyMember
+from app.models.tables import Family, FamilyMember, utcnow
 from app.repositories import repos
 
 
@@ -16,6 +16,19 @@ async def require_membership(db: AsyncSession, family_id: int, user_id: int) -> 
     if member is None:
         raise family_forbidden()
     return member
+
+
+async def lock_membership_scope(
+    db: AsyncSession, user_id: int, family_id: int
+) -> tuple[FamilyMember, Family]:
+    user = await repos.get_user_for_update(db, user_id)
+    if user is None:
+        raise auth_required()
+    family = await repos.get_family_for_update(db, family_id)
+    member = await repos.get_membership_for_update(db, family_id, user_id)
+    if family is None or member is None:
+        raise family_forbidden()
+    return member, family
 
 
 async def require_owner(db: AsyncSession, family_id: int, user_id: int) -> FamilyMember:
@@ -51,10 +64,11 @@ async def create_family(db: AsyncSession, user_id: int, name: str) -> dict:
 
 async def rename_family(db: AsyncSession, family_id: int, user_id: int, name: str) -> dict:
     await require_owner(db, family_id, user_id)
-    family = await repos.get_family(db, family_id)
+    family = await repos.get_family_for_update(db, family_id)
     if family is None:
         raise not_found("家庭组不存在")
     family.name = name
+    family.revision += 1
     await db.commit()
     return {"id": family.id, "name": family.name, "owner_user_id": family.owner_user_id, "role": "owner"}
 
@@ -96,9 +110,13 @@ async def preview_invite(db: AsyncSession, invite_token: str) -> dict:
 async def join_family(db: AsyncSession, user_id: int, invite_token: str) -> dict:
     preview = await preview_invite(db, invite_token)
     family_id = preview["family_id"]
+    family = await repos.get_family_for_update(db, family_id)
+    if family is None:
+        raise not_found("家庭组不存在")
     existing = await repos.get_membership(db, family_id, user_id)
     if existing is None:
         db.add(FamilyMember(family_id=family_id, user_id=user_id, role="member"))
+        family.revision += 1
         await db.commit()
     return {"family_id": family_id, "family_name": preview["family_name"]}
 
@@ -133,5 +151,85 @@ async def remove_member(db: AsyncSession, family_id: int, operator_id: int, targ
         raise not_found("成员不存在")
     if target.role == "owner" and operator_id != target_user_id:
         raise family_forbidden("不能移除家庭组所有者")
+    family = await repos.get_family_for_update(db, family_id)
+    if family is None:
+        raise not_found("家庭组不存在")
     await db.delete(target)
+    family.revision += 1
+    await db.commit()
+
+
+async def transfer_ownership(db: AsyncSession, family_id: int, operator_id: int, target_user_id: int) -> dict:
+    """所有者把家庭组转让给其他成员（文档 7.2）。"""
+    member = await require_owner(db, family_id, operator_id)
+    target = await repos.get_membership(db, family_id, target_user_id)
+    if target is None or target_user_id == operator_id:
+        raise not_found("成员不存在")
+    family = await repos.get_family_for_update(db, family_id)
+    if family is None:
+        raise not_found("家庭组不存在")
+    member.role = "member"
+    target.role = "owner"
+    family.owner_user_id = target_user_id
+    family.revision += 1
+    await db.commit()
+    return {"family_id": family_id, "owner_user_id": target_user_id}
+
+
+async def _retire_family_images(db: AsyncSession, family_id: int) -> None:
+    """家庭组删除前，其物品图片按延迟清理规则登记（文档 6.4）。"""
+    settings = get_settings()
+    delete_after = utcnow() + timedelta(days=settings.deleted_image_retain_days)
+    for image_url in await repos.list_family_image_urls(db, family_id):
+        await repos.mark_image_pending_delete(db, image_url, delete_after)
+
+
+async def _dissolve_locked(db: AsyncSession, family_id: int) -> None:
+    family = await repos.get_family_for_update(db, family_id)
+    if family is None:
+        raise not_found("家庭组不存在")
+    await _retire_family_images(db, family_id)
+    await db.delete(family)
+
+
+async def dissolve_family(db: AsyncSession, family_id: int, operator_id: int) -> None:
+    """所有者解散家庭组：成员关系与物品记录随家庭组删除（文档 7.2）。"""
+    await require_owner(db, family_id, operator_id)
+    await _dissolve_locked(db, family_id)
+    await db.commit()
+
+
+async def purge_deleted_items(db: AsyncSession, family_id: int, user_id: int) -> int:
+    """永久清理本家庭组已软删除的物品记录，图片进入立即清理（文档 8.5）。"""
+    await require_membership(db, family_id, user_id)
+    family = await repos.get_family_for_update(db, family_id)
+    if family is None:
+        raise not_found("家庭组不存在")
+    deleted = await repos.list_deleted_items(db, family_id)
+    now = utcnow()
+    for item in deleted:
+        await repos.mark_image_pending_delete(db, item.image_url, now)
+        await db.delete(item)
+    if deleted:
+        family.revision += 1
+    await db.commit()
+    return len(deleted)
+
+
+async def delete_account(db: AsyncSession, user_id: int) -> None:
+    """账号注销：退出非本人家庭组，解散本人拥有的家庭组（文档 14.3）。"""
+    for family, role in await repos.list_user_families(db, user_id):
+        if role == "owner":
+            await _dissolve_locked(db, family.id)
+        else:
+            member = await repos.get_membership(db, family.id, user_id)
+            if member is not None:
+                await db.delete(member)
+            locked = await repos.get_family_for_update(db, family.id)
+            if locked is not None:
+                locked.revision += 1
+    await repos.delete_idempotency_for_user(db, user_id)
+    user = await repos.get_user(db, user_id)
+    if user is not None:
+        await db.delete(user)
     await db.commit()

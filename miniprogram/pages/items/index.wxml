@@ -4,20 +4,36 @@
       class="search-input"
       value="{{keyword}}"
       placeholder="搜名称、位置或记录文字"
+      disabled="{{!ready || busy}}"
       bindinput="onSearchInput"
     />
   </view>
 
-  <view wx:if="{{items.length > 0}}" class="list">
-    <item-card wx:for="{{items}}" wx:key="id" item="{{item}}" bind:tap="onItemTap" />
-    <view wx:if="{{!hasMore}}" class="list-end text-hint">没有更多了</view>
+  <view wx:if="{{busy}}" class="placeholder">正在确认登录</view>
+
+  <view wx:if="{{noFamily && !busy}}" class="empty">
+    <view class="empty-text">还没有家庭，请先创建或加入</view>
+    <view class="empty-btn brutal-pressable" bindtap="goHome">回首页</view>
   </view>
 
-  <view wx:elif="{{loaded && !loading}}" class="empty">
-    <view class="empty-text">还没有收纳记录。</view>
-    <view class="empty-btn brutal-pressable" bindtap="goRecord">收起来</view>
+  <block wx:if="{{ready && !busy && !noFamily}}">
+    <view wx:if="{{items.length > 0}}" class="list">
+      <item-card wx:for="{{items}}" wx:key="id" item="{{item}}" bind:tap="onItemTap" />
+      <view wx:if="{{!hasMore}}" class="list-end text-hint">没有更多了</view>
+    </view>
+
+    <view wx:elif="{{loaded && !loading && !errorText}}" class="empty">
+      <view class="empty-text">还没有收纳记录。</view>
+      <view class="empty-btn brutal-pressable" bindtap="goRecord">收起来</view>
+    </view>
+
+  </block>
+
+  <view wx:if="{{errorText && !busy}}" class="empty">
+    <view class="empty-text">{{errorText}}</view>
+    <view class="empty-btn brutal-pressable" bindtap="onRetry">重试</view>
   </view>
 
   <!-- 右下角快捷新增（文档 8.4） -->
-  <view class="fab brutal-pressable" bindtap="goRecord">收起来</view>
+  <view wx:if="{{ready && !busy && !noFamily}}" class="fab brutal-pressable" bindtap="goRecord">收起来</view>
 </view>

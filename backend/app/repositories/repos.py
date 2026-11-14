@@ -1,7 +1,7 @@
 """数据访问层。所有物品查询必须同时包含 family_id 和 status=1（文档 12.4）。"""
 from datetime import datetime, timezone
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.tables import Family, FamilyMember, IdempotencyRecord, Item, UploadedImage, User
@@ -16,14 +16,35 @@ async def get_user(db: AsyncSession, user_id: int) -> User | None:
     return await db.get(User, user_id)
 
 
+async def get_user_for_update(db: AsyncSession, user_id: int) -> User | None:
+    stmt = select(User).where(User.id == user_id).with_for_update().execution_options(populate_existing=True)
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
 # ---------- 家庭组 ----------
 async def get_family(db: AsyncSession, family_id: int) -> Family | None:
     return await db.get(Family, family_id)
 
 
+async def get_family_for_update(db: AsyncSession, family_id: int) -> Family | None:
+    stmt = select(Family).where(Family.id == family_id).with_for_update().execution_options(populate_existing=True)
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
 async def get_membership(db: AsyncSession, family_id: int, user_id: int) -> FamilyMember | None:
     stmt = select(FamilyMember).where(
         FamilyMember.family_id == family_id, FamilyMember.user_id == user_id
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def get_membership_for_update(
+    db: AsyncSession, family_id: int, user_id: int
+) -> FamilyMember | None:
+    stmt = (
+        select(FamilyMember)
+        .where(FamilyMember.family_id == family_id, FamilyMember.user_id == user_id)
+        .with_for_update().execution_options(populate_existing=True)
     )
     return (await db.execute(stmt)).scalar_one_or_none()
 
@@ -63,6 +84,13 @@ async def get_active_item(db: AsyncSession, family_id: int, item_id: int) -> Ite
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
+async def get_active_item_for_update(
+    db: AsyncSession, family_id: int, item_id: int
+) -> Item | None:
+    stmt = _active_items_stmt(family_id).where(Item.id == item_id).with_for_update().execution_options(populate_existing=True)
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
 async def list_active_items(db: AsyncSession, family_id: int) -> list[Item]:
     stmt = _active_items_stmt(family_id).order_by(Item.updated_at.desc())
     return list((await db.execute(stmt)).scalars().all())
@@ -97,6 +125,16 @@ async def count_active_items(db: AsyncSession, family_id: int) -> int:
     return (await db.execute(stmt)).scalar_one()
 
 
+async def list_family_image_urls(db: AsyncSession, family_id: int) -> list[str]:
+    stmt = select(Item.image_url).where(Item.family_id == family_id)
+    return [r[0] for r in (await db.execute(stmt)).all()]
+
+
+async def list_deleted_items(db: AsyncSession, family_id: int) -> list[Item]:
+    stmt = select(Item).where(Item.family_id == family_id, Item.status == 0)
+    return list((await db.execute(stmt)).scalars().all())
+
+
 # ---------- 幂等 ----------
 async def get_idempotency(db: AsyncSession, user_id: int, idem_key: str) -> IdempotencyRecord | None:
     stmt = select(IdempotencyRecord).where(
@@ -105,9 +143,33 @@ async def get_idempotency(db: AsyncSession, user_id: int, idem_key: str) -> Idem
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
+async def get_idempotency_for_update(
+    db: AsyncSession, user_id: int, idem_key: str
+) -> IdempotencyRecord | None:
+    stmt = (
+        select(IdempotencyRecord)
+        .where(IdempotencyRecord.user_id == user_id, IdempotencyRecord.idem_key == idem_key)
+        .with_for_update().execution_options(populate_existing=True)
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def delete_idempotency_for_user(db: AsyncSession, user_id: int) -> None:
+    await db.execute(delete(IdempotencyRecord).where(IdempotencyRecord.user_id == user_id))
+
+
 # ---------- 图片登记 ----------
 async def get_uploaded_image_by_key(db: AsyncSession, object_key: str) -> UploadedImage | None:
     stmt = select(UploadedImage).where(UploadedImage.object_key == object_key)
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def get_uploaded_image_by_key_for_update(
+    db: AsyncSession, object_key: str
+) -> UploadedImage | None:
+    stmt = (
+        select(UploadedImage).where(UploadedImage.object_key == object_key).with_for_update().execution_options(populate_existing=True)
+    )
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
@@ -118,8 +180,8 @@ async def get_uploaded_image_by_url(db: AsyncSession, image_url: str) -> Uploade
 
 async def mark_image_pending_delete(db: AsyncSession, image_url: str, delete_after: datetime) -> None:
     record = await get_uploaded_image_by_url(db, image_url)
-    if record is not None:
-        record.used = 2
+    if record is not None and record.delete_state == "none":
+        record.delete_state = "pending_delete"
         record.delete_after = delete_after
 
 
@@ -128,9 +190,11 @@ async def list_cleanable_images(db: AsyncSession, unused_before: datetime) -> li
     stmt = select(UploadedImage).where(
         or_(
             # 未入库的临时图片
-            (UploadedImage.used == 0) & (UploadedImage.created_at < unused_before),
+            (UploadedImage.bound_item_id.is_(None))
+            & (UploadedImage.delete_state == "none")
+            & (UploadedImage.created_at < unused_before),
             # 被替换或软删除后的延迟清理图片
-            (UploadedImage.used == 2) & (UploadedImage.delete_after < now),
+            (UploadedImage.delete_state == "pending_delete") & (UploadedImage.delete_after < now),
         )
     ).limit(200)
     return list((await db.execute(stmt)).scalars().all())

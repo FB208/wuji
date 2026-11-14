@@ -6,7 +6,12 @@ from app.api.deps import get_current_user
 from app.core.errors import ok
 from app.db.session import get_db
 from app.models.tables import User
-from app.schemas.schemas import FamilyCreateRequest, FamilyJoinRequest, FamilyPatchRequest
+from app.schemas.schemas import (
+    FamilyCreateRequest,
+    FamilyJoinRequest,
+    FamilyPatchRequest,
+    FamilyTransferRequest,
+)
 from app.services import family_service
 
 router = APIRouter()
@@ -91,3 +96,37 @@ async def remove_member(
 ):
     await family_service.remove_member(db, family_id, user.id, user_id)
     return ok(request, {"removed": True})
+
+
+@router.post("/families/{family_id}/transfer")
+async def transfer_family(
+    request: Request,
+    family_id: int,
+    body: FamilyTransferRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    data = await family_service.transfer_ownership(db, family_id, user.id, body.user_id)
+    return ok(request, data)
+
+
+@router.delete("/families/{family_id}")
+async def dissolve_family(
+    request: Request,
+    family_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await family_service.dissolve_family(db, family_id, user.id)
+    return ok(request, {"dissolved": True})
+
+
+@router.post("/families/{family_id}/purge-deleted")
+async def purge_deleted_items(
+    request: Request,
+    family_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    count = await family_service.purge_deleted_items(db, family_id, user.id)
+    return ok(request, {"purged": count})

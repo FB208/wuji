@@ -1,7 +1,9 @@
 """请求 / 响应模型（对应文档 13 章接口字段）。"""
 from datetime import datetime
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
+from typing_extensions import Annotated
 
 
 # ---------- 认证 ----------
@@ -64,6 +66,10 @@ class InvitePreviewOut(BaseModel):
     owner_nickname: str | None
 
 
+class FamilyTransferRequest(BaseModel):
+    user_id: int = Field(gt=0)
+
+
 # ---------- 物品 ----------
 class ItemOut(BaseModel):
     id: int
@@ -71,6 +77,7 @@ class ItemOut(BaseModel):
     location_text: str
     record_text: str | None = None
     image_url: str
+    version: int
     updated_at: datetime
 
 
@@ -83,8 +90,8 @@ class ItemBriefOut(BaseModel):
 
 class ItemRecordRequest(BaseModel):
     family_id: int
-    image_token: str = Field(min_length=1)
-    transcript: str = Field(min_length=1)
+    image_token: str = Field(min_length=1, max_length=2048)
+    transcript: str = Field(min_length=1, max_length=2000)
 
 
 class ItemRecordOut(BaseModel):
@@ -102,13 +109,43 @@ class ItemListOut(BaseModel):
 class ItemPatchRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     location_text: str | None = Field(default=None, min_length=1, max_length=255)
-    image_token: str | None = None
+    image_token: str | None = Field(default=None, max_length=2048)
+    expected_version: int = Field(ge=1)
 
 
 # ---------- 查找 ----------
+def _positive_int(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError("物品 id 必须为正整数")
+    return value
+
+
+SearchItemId = Annotated[int, BeforeValidator(_positive_int)]
+
+
+class SearchTurn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(max_length=512)
+    status: Literal["found", "multiple", "not_found"] | None = None
+    item_ids: list[SearchItemId] = Field(default_factory=list, max_length=5)
+
+
+class SearchContext(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    family_id: int | None = None
+    initial_query: str | None = Field(default=None, max_length=512)
+    turns: list[SearchTurn] = Field(default_factory=list, max_length=6)
+    shown_item_ids: list[SearchItemId] = Field(default_factory=list, max_length=500)
+    excluded_item_ids: list[SearchItemId] = Field(default_factory=list, max_length=500)
+    last_item_ids: list[SearchItemId] = Field(default_factory=list, max_length=5)
+    last_status: Literal["found", "multiple", "not_found"] | None = None
+
+
 class SearchTextRequest(BaseModel):
     family_id: int
-    query: str = Field(min_length=1)
+    query: str = Field(min_length=1, max_length=512)
     context: dict | None = None
 
 
