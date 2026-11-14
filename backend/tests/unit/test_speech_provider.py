@@ -1,8 +1,9 @@
 """语音转写 provider 单元测试：2.0 标准版 submit + query 轮询（全部 mock）。"""
+import base64
 import contextlib
 import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -23,15 +24,6 @@ _SETTINGS = dict(
 
 def _settings(**overrides):
     return SimpleNamespace(**{**_SETTINGS, **overrides})
-
-
-def _rustfs_mock():
-    m = SimpleNamespace()
-    m.build_tmp_audio_key = lambda ext: f"speech-tmp/test.{ext}"
-    m.upload_object = AsyncMock()
-    m.public_url = lambda key: f"https://img.test/{key}"
-    m.delete_object = AsyncMock()
-    return m
 
 
 def _handler(submit_code="20000000", query_codes=("20000000",), text="螺丝刀在阳台"):
@@ -69,23 +61,19 @@ def _client(transport):
 
 @contextlib.contextmanager
 def _patched(handler, settings=None):
-    rustfs = _rustfs_mock()
     with (
         patch.object(sp.httpx, "AsyncClient", _client(httpx.MockTransport(handler))),
-        patch.object(sp, "rustfs_provider", rustfs),
         patch.object(sp, "get_settings", return_value=settings or _settings()),
     ):
-        yield rustfs
+        yield
 
 
 async def test_transcribe_polls_until_success():
     handler, requests = _handler(query_codes=("20000001", "20000002", "20000000"))
-    with _patched(handler) as rustfs:
+    with _patched(handler):
         text = await sp.speech_provider.transcribe(b"audio-bytes", "mp3")
 
     assert text == "螺丝刀在阳台"
-    rustfs.upload_object.assert_awaited_once()
-    rustfs.delete_object.assert_awaited_once_with("speech-tmp/test.mp3")
 
     submit_req, *query_reqs = requests
     assert submit_req.url.path == "/api/v3/auc/bigmodel/submit"
@@ -93,7 +81,7 @@ async def test_transcribe_polls_until_success():
     assert all(r.url.path == "/api/v3/auc/bigmodel/query" for r in query_reqs)
 
     body = json.loads(submit_req.content)
-    assert body["audio"]["url"] == "https://img.test/speech-tmp/test.mp3"
+    assert body["audio"]["data"] == base64.b64encode(b"audio-bytes").decode("ascii")
     assert body["audio"]["format"] == "mp3"
     assert body["request"]["model_name"] == "bigmodel"
 
@@ -106,11 +94,10 @@ async def test_transcribe_polls_until_success():
 
 async def test_submit_failure_raises():
     handler, _ = _handler(submit_code="45000001")
-    with _patched(handler) as rustfs:
+    with _patched(handler):
         with pytest.raises(AppError) as ei:
             await sp.speech_provider.transcribe(b"audio-bytes", "mp3")
     assert ei.value.code == "TRANSCRIBE_FAILED"
-    rustfs.delete_object.assert_awaited_once()
 
 
 async def test_silent_audio_message():

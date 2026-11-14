@@ -1,5 +1,6 @@
 /** 图片压缩与上传：长边压缩至不超过 1600px 后上传（文档 10.5）。 */
-import { ApiError, uploadFile } from "./api";
+import { ApiError, request, uploadFile } from "./api";
+import { pollTask } from "./tasks";
 
 const MAX_EDGE = 1600;
 
@@ -12,6 +13,7 @@ interface UploadExtras {
   onTask?: (task: WechatMiniprogram.UploadTask) => void;
   isCancelled?: () => boolean;
   onProgress?: (percent: number) => void;
+  onStage?: (stage: string, detail: string) => void;
   timeout?: number;
 }
 
@@ -59,11 +61,16 @@ export interface TranscribeResult {
   transcript: string;
 }
 
-export function transcribeAudio(
+interface TaskRef {
+  task_id: string;
+}
+
+export async function transcribeAudio(
   filePath: string,
   options: UploadExtras = {}
 ): Promise<TranscribeResult> {
-  return uploadFile<TranscribeResult>({
+  // 第一阶段：音频上传（有真实进度）；返回 task_id 后进入第二阶段轮询
+  const ref = await uploadFile<TaskRef>({
     path: "/speech/transcribe",
     filePath,
     name: "audio",
@@ -71,5 +78,47 @@ export function transcribeAudio(
     isCancelled: options.isCancelled,
     onProgress: options.onProgress,
     timeout: options.timeout,
+  });
+  // 第二阶段：后端 RustFS 临时对象 → 火山提交 → 轮询识别结果，经 onStage 透出阶段
+  if (options.onStage) options.onStage("asr_start", "");
+  return pollTask<TranscribeResult>(ref.task_id, {
+    isCancelled: options.isCancelled,
+    onStage: options.onStage,
+    timeoutMs: 90000,
+  });
+}
+
+export interface RecordResult {
+  operation: string;
+  item: {
+    id: number;
+    name: string;
+    location_text: string;
+    record_text: string;
+    image_url: string;
+    version: number;
+    updated_at: string | null;
+  };
+}
+
+export async function recordItem(
+  familyId: number,
+  imageToken: string,
+  transcript: string,
+  idempotencyKey: string,
+  options: UploadExtras = {}
+): Promise<RecordResult> {
+  const ref = await request<TaskRef>({
+    path: "/items/record",
+    method: "POST",
+    data: { family_id: familyId, image_token: imageToken, transcript },
+    idempotencyKey,
+    isCancelled: options.isCancelled,
+    timeout: options.timeout,
+  });
+  return pollTask<RecordResult>(ref.task_id, {
+    isCancelled: options.isCancelled,
+    onStage: options.onStage,
+    timeoutMs: 60000,
   });
 }

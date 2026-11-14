@@ -1,6 +1,6 @@
 """收纳入库：图片上传、image_token、create/move 判断与写库（文档 4 / 10 / 13.3）。"""
 from datetime import timedelta, timezone
-from typing import Any
+from typing import Any, Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,6 +41,15 @@ _MAX_LOCATION_LEN = 255
 
 class _FamilyRevisionChanged(Exception):
     pass
+
+
+# 阶段回调：on_stage(stage, detail)，供任务注册表推进进度；可选
+StageCallback = Callable[[str, str], None]
+
+
+def _emit(on_stage: StageCallback | None, stage: str, detail: str = "") -> None:
+    if on_stage is not None:
+        on_stage(stage, detail)
 
 
 def _validate_image(content: bytes, ext: str) -> None:
@@ -175,6 +184,7 @@ async def record_item(
     image_token: str,
     transcript: str,
     idem_key: str | None,
+    on_stage: StageCallback | None = None,
 ) -> dict:
     """入库主流程：语义判断 create/move，事务写库，幂等返回。"""
     logger.info("入库开始 user=%d family=%d transcript=%r", user_id, family_id, transcript)
@@ -205,7 +215,7 @@ async def record_item(
     try:
         result = await _execute_with_retry(
             db, user_id, family_id, key, lease_token, revision_seen,
-            summary, transcript, image, registration_id,
+            summary, transcript, image, registration_id, on_stage,
         )
     except AppError as exc:
         await idempotency_service.mark_failed(db, user_id, key, lease_token, exc)
@@ -228,13 +238,16 @@ async def _execute_with_retry(
     transcript: str,
     image: dict,
     registration_id: int,
+    on_stage: StageCallback | None = None,
 ) -> dict:
 
     budget = SemanticBudget.from_settings()
     if not await idempotency_service.renew_lease(db, user_id, idem_key, lease_token):
         raise record_attempt_superseded()
+    _emit(on_stage, "judging")
     judge = await semantic_provider.judge_record(transcript, summary, budget=budget)
     try:
+        _emit(on_stage, "writing")
         return await _finalize(
             db, user_id, family_id, idem_key, lease_token,
             revision_seen, judge, transcript, image, registration_id,
@@ -250,6 +263,7 @@ async def _execute_with_retry(
         revision_seen = family.revision
     if not await idempotency_service.renew_lease(db, user_id, idem_key, lease_token):
         raise record_attempt_superseded()
+    _emit(on_stage, "rejudging")
     try:
         judge = await semantic_provider.judge_record(transcript, summary, budget=budget)
     except AppError as exc:
@@ -257,6 +271,7 @@ async def _execute_with_retry(
             raise version_conflict("家庭数据已变化，请重试") from exc
         raise
     try:
+        _emit(on_stage, "writing")
         return await _finalize(
             db, user_id, family_id, idem_key, lease_token,
             revision_seen, judge, transcript, image, registration_id,

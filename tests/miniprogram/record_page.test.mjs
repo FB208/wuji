@@ -43,6 +43,10 @@ function env(overrides = {}) {
   const uploadMod = {
     uploadImage: (fid, p, o) => { calls.upload.push({ fid, p }); return overrides.upload ? overrides.upload({ fid, p }) : Promise.resolve({ image_token: "img1" }); },
     transcribeAudio: (p, o) => { calls.transcribe.push(p); return overrides.transcribe ? overrides.transcribe(p) : Promise.resolve({ transcript: "t" }); },
+    recordItem: (fid, imageToken, transcript, key, o) => {
+      calls.req.push({ path: "/items/record", method: "POST", data: { family_id: fid, image_token: imageToken, transcript }, key });
+      return overrides.request ? overrides.request(o) : Promise.resolve({});
+    },
   };
   let def;
   loadTsModule(PAGE, {

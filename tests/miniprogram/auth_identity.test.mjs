@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { loadTsModule, mockWx, MP_DIR } from "./helpers/loader.mjs";
+import { loadTsModule, mockWx, MP_DIR, noticeMock } from "./helpers/loader.mjs";
 const K = (s) => MP_DIR.replaceAll(path.sep, "/") + "/" + s;
 
 function deferred() { let r, rej; const p = new Promise((res, j) => { r = res; rej = j; }); return { p, resolve: r, reject: rej }; }
@@ -62,7 +62,7 @@ function env() {
     navigateTo: () => {},
   });
   const storeMod = loadTsModule(K("store/index.ts"), { globals: { wx: wxBase } });
-  const apiMod = loadTsModule(K("services/api.ts"), { globals: { wx: wxBase } });
+  const apiMod = loadTsModule(K("services/api.ts"), { globals: { wx: wxBase }, mocks: { [K("services/notice")]: noticeMock(wxBase) } });
   const authMod = loadTsModule(K("services/auth.ts"), {
     globals: { wx: wxBase },
     mocks: { [K("services/api")]: apiMod, [K("store/index")]: storeMod },

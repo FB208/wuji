@@ -1,12 +1,31 @@
 /** P03 收纳物品：拍照 → 按住说话 → 自动提交（文档 4 章）。 */
-import { request, newIdempotencyKey, ApiError } from "../../services/api";
+import { newIdempotencyKey, ApiError } from "../../services/api";
 import { ensureLogin } from "../../services/auth";
-import { uploadImage, transcribeAudio } from "../../services/upload";
+import { uploadImage, transcribeAudio, recordItem } from "../../services/upload";
 import { PageScope } from "../../services/page-scope";
 import { bindNotice, registerNotice, showNotice } from "../../services/notice";
 import { store, Scope } from "../../store/index";
 
 type PageState = "CAMERA" | "READY" | "RECORDING" | "UPLOADING" | "SAVING" | "SUCCESS" | "FAILED";
+
+type StepStatus = "pending" | "active" | "done" | "failed";
+interface Step {
+  key: string;
+  label: string;
+  status: StepStatus;
+  detail: string;
+}
+
+/** 后端任务阶段 → 用户可见文案（不确定进度只报"在做什么"，不造假百分比） */
+const STAGE_TEXT: Record<string, string> = {
+  queued: "排队中",
+  asr_submit: "上传音频到识别服务",
+  asr_submitted: "已提交识别",
+  asr_polling: "识别中",
+  judging: "理解内容",
+  rejudging: "内容有变化，重新理解",
+  writing: "写入记录",
+};
 
 interface Draft {
   scope: Scope;
@@ -34,6 +53,7 @@ Page({
     micReady: false,
     micWillCancel: false,
     notice: null as any,
+    steps: [] as Step[],
   },
   _guard: null as PageScope | null,
   _sessionScope: null as Scope | null,
@@ -59,7 +79,7 @@ Page({
     let pendingBusy = false;
     if (draft) {
       pendingBusy = this.data.state === "UPLOADING" || this.data.state === "SAVING";
-      if (pendingBusy) this.setData({ state: "FAILED", statusText: "提交被中断", primaryLabel: "重新提交", secondaryLabel: "" });
+      if (pendingBusy) this.setData({ state: "FAILED", statusText: "提交被中断", primaryLabel: "重新提交", secondaryLabel: "", steps: [] });
     }
     this.setData({ photoPath: "", processing: pendingBusy, sessionReady: false });
     try {
@@ -128,7 +148,7 @@ Page({
     this._draft = null;
     this.setData({
       state: "CAMERA", photoPath: "", processing: false, sessionReady: false,
-      statusText: "状态已变化，请重试", primaryLabel: "重试", secondaryLabel: "",
+      statusText: "状态已变化，请重试", primaryLabel: "重试", secondaryLabel: "", steps: [],
     });
   },
 
@@ -227,12 +247,19 @@ Page({
     this.submit();
   },
 
+  _setStep(key: string, status: StepStatus, detail?: string) {
+    const steps = (this.data.steps as Step[]).map((s) =>
+      s.key === key ? { ...s, status, detail: detail !== undefined ? detail : s.detail } : s
+    );
+    this.setData({ steps });
+  },
+
   fail(err: unknown, draft: Draft) {
     const code = err instanceof ApiError ? err.code : "";
     const message = err instanceof ApiError ? err.message : "处理失败，请重试";
     if (code === "IMAGE_INVALID") {
       this._draft = null;
-      this.setData({ state: "CAMERA", photoPath: "", processing: false, statusText: "", secondaryText: message });
+      this.setData({ state: "CAMERA", photoPath: "", processing: false, statusText: "", secondaryText: message, steps: [] });
       return;
     }
     if (code === "TRANSCRIBE_FAILED" || code === "RECORD_PARSE_FAILED" || code === "RECORD_UNCLEAR") {
@@ -241,10 +268,10 @@ Page({
       draft.transcript = "";
       draft.frozen = null;
       showNotice(message);
-      this.setData({ state: "READY", processing: false, statusText: "", secondaryText: message });
+      this.setData({ state: "READY", processing: false, statusText: "", secondaryText: message, steps: [] });
       return;
     }
-    this.setData({ state: "FAILED", processing: false, statusText: message, primaryLabel: "重新提交", secondaryLabel: "" });
+    this.setData({ state: "FAILED", processing: false, statusText: "", primaryLabel: "重新提交", secondaryLabel: message });
   },
 
   async submit() {
@@ -256,7 +283,13 @@ Page({
     const op = guard.capture();
     if (!guard.isCurrent(op)) return;
     const fid = draft.frozen ? draft.frozen.family_id : draft.scope.familyId;
-    this.setData({ state: "UPLOADING", processing: true, statusText: "正在上传", secondaryText: "", imageProgress: 0, audioProgress: 0 });
+    const steps: Step[] = [
+      { key: "photo", label: "上传照片", status: draft.imageToken ? "done" : "active", detail: "" },
+      { key: "audio", label: "上传语音", status: draft.transcript ? "done" : "active", detail: "" },
+      { key: "asr", label: "语音识别", status: draft.transcript ? "done" : "pending", detail: "" },
+      { key: "judge", label: "理解并写入", status: "pending", detail: "" },
+    ];
+    this.setData({ state: "UPLOADING", processing: true, statusText: "正在上传", secondaryText: "", imageProgress: 0, audioProgress: 0, steps });
     try {
       if (!draft.frozen) {
         const results = await Promise.allSettled([
@@ -264,14 +297,32 @@ Page({
             uploadImage(fid, draft.photoPath, {
               isCancelled: hooks.isCancelled,
               onTask: hooks.onTask,
-              onProgress: (p) => { if (guard.isFrameCurrent(op.generation)) this.setData({ imageProgress: p }); },
+              onProgress: (p) => {
+                if (guard.isFrameCurrent(op.generation)) {
+                  this.setData({ imageProgress: p });
+                  this._setStep("photo", "active", `${p}%`);
+                }
+              },
             })
           ),
           draft.transcript ? Promise.resolve({ transcript: draft.transcript }) : guard.run<{ transcript: string }>(op, (hooks) =>
             transcribeAudio(draft.audioPath, {
               isCancelled: hooks.isCancelled,
               onTask: hooks.onTask,
-              onProgress: (p) => { if (guard.isFrameCurrent(op.generation)) this.setData({ audioProgress: p }); },
+              onProgress: (p) => {
+                if (guard.isFrameCurrent(op.generation)) {
+                  this.setData({ audioProgress: p });
+                  this._setStep("audio", "active", `${p}%`);
+                }
+              },
+              onStage: (stage, detail) => {
+                if (!guard.isFrameCurrent(op.generation)) return;
+                this._setStep("audio", "done", "");
+                const text = stage === "asr_polling" && detail
+                  ? `识别中 · 第${detail}轮`
+                  : STAGE_TEXT[stage] || "识别中";
+                this._setStep("asr", "active", text);
+              },
             })
           ),
         ]);
@@ -282,12 +333,19 @@ Page({
         if (!guard.isCurrent(op)) return;
         if (results[0].status === "fulfilled" && !draft.imageToken) {
           draft.imageToken = (results[0].value as { image_token: string }).image_token;
+          this._setStep("photo", "done", "");
         }
         if (results[1].status === "fulfilled" && !draft.transcript) {
           draft.transcript = (results[1].value as { transcript: string }).transcript;
+          this._setStep("asr", "done", "");
         }
         const failed = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
         if (failed) {
+          if (results[0].status === "rejected") this._setStep("photo", "failed");
+          if (results[1].status === "rejected") {
+            const audioStep = (this.data.steps as Step[]).find((s) => s.key === "audio");
+            this._setStep(audioStep && audioStep.status === "done" ? "asr" : "audio", "failed");
+          }
           this.fail(failed.reason, draft);
           return;
         }
@@ -295,22 +353,26 @@ Page({
       }
       if (!guard.isCurrent(op)) return;
       this.setData({ state: "SAVING", statusText: "正在入库" });
+      this._setStep("judge", "active", STAGE_TEXT.queued);
       await guard.run(op, (hooks) =>
-        request({
-          path: "/items/record",
-          method: "POST",
-          idempotencyKey: draft.key,
-          data: draft.frozen as Record<string, any>,
+        recordItem(fid, draft.frozen!.image_token, draft.frozen!.transcript, draft.key, {
           isCancelled: hooks.isCancelled,
-          onTask: hooks.onTask,
+          onStage: (stage, detail) => {
+            if (!guard.isFrameCurrent(op.generation)) return;
+            const text = stage === "asr_polling" && detail
+              ? `识别中 · 第${detail}轮`
+              : STAGE_TEXT[stage] || "";
+            this._setStep("judge", "active", text || undefined);
+          },
         })
       );
+      this._setStep("judge", "done", "");
       if (guard.scopeChanged(op)) {
         this.clearForScopeChange();
         return;
       }
       if (!guard.isCurrent(op)) return;
-      this.setData({ state: "SUCCESS", processing: false, statusText: "入库完成", secondaryText: draft.frozen.transcript });
+      this.setData({ state: "SUCCESS", processing: false, statusText: "入库完成", secondaryText: draft.frozen.transcript, steps: [] });
       this._navTimer = setTimeout(() => {
         this._navTimer = null;
         const g = this._guard as PageScope;
@@ -323,6 +385,7 @@ Page({
         return;
       }
       if (!guard.isCurrent(op)) return;
+      if ((this.data.state as PageState) === "SAVING") this._setStep("judge", "failed");
       this.fail(err, draft);
     }
   },

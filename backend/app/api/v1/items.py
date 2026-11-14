@@ -1,14 +1,22 @@
 """媒体、语音、入库、查找与物品维护接口（文档 13.2～13.5）。"""
+import asyncio
 import json
 
 from fastapi import APIRouter, Depends, File, Form, Header, Query, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
-from app.core.errors import AppError, audio_too_long, audio_too_short, ok, search_failed
+from app.core.errors import (
+    AppError,
+    audio_too_long,
+    audio_too_short,
+    not_found,
+    ok,
+    search_failed,
+)
 from app.core.logging import get_logger
 from app.core.security import rate_limiter
-from app.db.session import get_db
+from app.db.session import SessionLocal, get_db
 from app.models.tables import User
 from app.providers.speech import speech_provider
 from app.schemas.schemas import (
@@ -16,7 +24,7 @@ from app.schemas.schemas import (
     ItemRecordRequest,
     SearchTextRequest,
 )
-from app.services import record_service, search_service
+from app.services import record_service, search_service, tasks
 from app.services.family_service import require_membership
 
 router = APIRouter()
@@ -50,7 +58,7 @@ async def upload_image(
     return ok(request, data)
 
 
-# ---------- 语音转写 ----------
+# ---------- 语音转写（任务化：先拿 task_id，轮询 GET /tasks/{id} 取结果） ----------
 @router.post("/speech/transcribe")
 async def transcribe(
     request: Request,
@@ -64,24 +72,86 @@ async def transcribe(
     if len(content) > MAX_AUDIO_BYTES:
         raise audio_too_long()
     logger.info("收到录音 user=%d bytes=%d name=%s", user.id, len(content), audio.filename)
-    transcript = await speech_provider.transcribe(content, _audio_ext(audio.filename))
-    return ok(request, {"transcript": transcript})
+    task = tasks.create("speech", user.id)
+    asyncio.create_task(_speech_job(task.id, content, _audio_ext(audio.filename)))
+    return ok(request, {"task_id": task.id})
 
 
-# ---------- 入库 ----------
+async def _speech_job(task_id: str, content: bytes, ext: str) -> None:
+    try:
+        transcript = await speech_provider.transcribe(
+            content, ext, on_stage=lambda s, d="": tasks.set_stage(task_id, s, d)
+        )
+    except Exception as exc:
+        tasks.fail(task_id, exc)
+        return
+    tasks.finish(task_id, {"transcript": transcript})
+
+
+# ---------- 入库（任务化） ----------
 @router.post("/items/record")
 async def record_item(
     request: Request,
     body: ItemRecordRequest,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
 ):
     rate_limiter.check(f"record:{user.id}", limit=20, window_seconds=60)
-    data = await record_service.record_item(
-        db, user.id, body.family_id, body.image_token, body.transcript, idempotency_key
+    if idempotency_key:
+        existing = tasks.find_by_idem(user.id, idempotency_key)
+        if existing is not None:
+            return ok(request, {"task_id": existing.id})
+    task = tasks.create("record", user.id, idem_key=idempotency_key)
+    asyncio.create_task(
+        _record_job(
+            task.id, user.id, body.family_id, body.image_token, body.transcript, idempotency_key
+        )
     )
-    return ok(request, data)
+    return ok(request, {"task_id": task.id})
+
+
+async def _record_job(
+    task_id: str,
+    user_id: int,
+    family_id: int,
+    image_token: str,
+    transcript: str,
+    idem_key: str | None,
+) -> None:
+    try:
+        async with SessionLocal() as db:
+            data = await record_service.record_item(
+                db, user_id, family_id, image_token, transcript, idem_key,
+                on_stage=lambda s, d="": tasks.set_stage(task_id, s, d),
+            )
+    except Exception as exc:
+        tasks.fail(task_id, exc)
+        return
+    tasks.finish(task_id, data)
+
+
+# ---------- 任务状态轮询 ----------
+@router.get("/tasks/{task_id}")
+async def task_status(
+    request: Request,
+    task_id: str,
+    user: User = Depends(get_current_user),
+):
+    task = tasks.get(task_id, user.id)
+    if task is None:
+        raise not_found("任务不存在或已过期")
+    return ok(
+        request,
+        {
+            "task_id": task.id,
+            "kind": task.kind,
+            "stage": task.stage,
+            "detail": task.detail,
+            "done": task.done,
+            "result": task.result,
+            "error": task.error,
+        },
+    )
 
 
 # ---------- 查找 ----------

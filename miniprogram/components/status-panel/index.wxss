@@ -43,6 +43,80 @@
   color: #555555;
 }
 
+.steps {
+  margin-top: 8rpx;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  padding: 12rpx 0;
+  text-align: left;
+}
+
+.step-icon {
+  width: 44rpx;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-done {
+  color: #1a9e4b;
+  font-size: 30rpx;
+  font-weight: 700;
+}
+
+.icon-failed {
+  color: #d03030;
+  font-size: 30rpx;
+  font-weight: 700;
+}
+
+.icon-pending {
+  color: #bbbbbb;
+  font-size: 36rpx;
+  font-weight: 700;
+}
+
+.spinner {
+  width: 26rpx;
+  height: 26rpx;
+  border: 4rpx solid #dddddd;
+  border-top-color: #111111;
+  border-radius: 50%;
+  animation: step-spin 0.8s linear infinite;
+}
+
+@keyframes step-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.step-label {
+  font-size: 30rpx;
+  font-weight: 700;
+}
+
+.step-detail {
+  margin-left: auto;
+  padding-left: 24rpx;
+  font-size: 24rpx;
+  color: #555555;
+  text-align: right;
+}
+
+.step-pending .step-label {
+  color: #999999;
+  font-weight: 400;
+}
+
+.step-failed .step-label {
+  color: #d03030;
+}
+
 .retry {
   margin-top: 32rpx;
   padding: 20rpx 0;

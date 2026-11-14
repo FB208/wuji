@@ -62,7 +62,8 @@
   <status-panel
     visible="{{state === 'UPLOADING' || state === 'SAVING' || state === 'SUCCESS' || state === 'FAILED'}}"
     text="{{statusText}}"
-    secondary-text="{{state === 'UPLOADING' ? '照片 ' + imageProgress + '% · 语音 ' + audioProgress + '%' : secondaryText}}"
+    steps="{{steps}}"
+    secondary-text="{{secondaryText}}"
     error="{{state === 'FAILED'}}"
     retry-text="{{primaryLabel}}"
     secondary-retry-text="{{secondaryLabel}}"
