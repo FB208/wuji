@@ -1,6 +1,7 @@
 node_modules/
 backend/.venv/
 backend/.env
+backend/logs/
 __pycache__/
 *.pyc
 doc_extracted.txt

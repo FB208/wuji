@@ -1,0 +1,18 @@
+<view wx:if="{{visible}}" class="mask" catchtap="noop">
+  <view class="panel brutal-card" catchtap="noop">
+    <view wx:if="{{title}}" class="title">{{title}}</view>
+    <view class="text">{{text}}</view>
+    <view wx:if="{{secondaryText}}" class="text sub">{{secondaryText}}</view>
+    <input
+      wx:if="{{editable}}"
+      class="input"
+      value="{{inputValue}}"
+      placeholder="{{placeholderText}}"
+      bindinput="onInput"
+    />
+    <view class="btns">
+      <view wx:if="{{cancelText}}" class="btn cancel brutal-pressable" bindtap="onCancel">{{cancelText}}</view>
+      <view class="btn confirm brutal-pressable" bindtap="onConfirm">{{confirmText}}</view>
+    </view>
+  </view>
+</view>

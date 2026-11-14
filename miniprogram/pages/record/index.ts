@@ -3,6 +3,7 @@ import { request, newIdempotencyKey, ApiError } from "../../services/api";
 import { ensureLogin } from "../../services/auth";
 import { uploadImage, transcribeAudio } from "../../services/upload";
 import { PageScope } from "../../services/page-scope";
+import { bindNotice, registerNotice, showNotice } from "../../services/notice";
 import { store, Scope } from "../../store/index";
 
 type PageState = "CAMERA" | "READY" | "RECORDING" | "UPLOADING" | "SAVING" | "SUCCESS" | "FAILED";
@@ -30,6 +31,9 @@ Page({
     audioProgress: 0,
     primaryLabel: "",
     secondaryLabel: "",
+    micReady: false,
+    micWillCancel: false,
+    notice: null as any,
   },
   _guard: null as PageScope | null,
   _sessionScope: null as Scope | null,
@@ -41,6 +45,7 @@ Page({
     this._guard = new PageScope();
   },
   onShow() {
+    registerNotice(bindNotice(this));
     (this._guard as PageScope).show();
     this.activate();
   },
@@ -94,6 +99,7 @@ Page({
     }
   },
   onHide() {
+    registerNotice(null);
     if (this._navTimer !== null) {
       clearTimeout(this._navTimer);
       this._navTimer = null;
@@ -138,7 +144,7 @@ Page({
     const frame = guard.frame();
     const uid = this._sessionScope!.userId;
     wx.createCameraContext().takePhoto({
-      quality: "high",
+      quality: "normal",
       success: (res) => {
         const g = this._guard as PageScope;
         if (!g.isFrameCurrent(frame) || !store.user || store.user.id !== uid) return;
@@ -154,6 +160,7 @@ Page({
     wx.chooseMedia({
       count: 1,
       mediaType: ["image"],
+      sizeType: ["compressed"],
       sourceType: ["album"],
       success: (res) => {
         const g = this._guard as PageScope;
@@ -185,17 +192,26 @@ Page({
 
   onRecordStart() {
     if (!this.active() || this.data.state !== "READY") return;
-    this.setData({ state: "RECORDING" });
+    this.setData({ state: "RECORDING", micReady: false, micWillCancel: false });
+  },
+  onRecordReady() {
+    if (this.data.state === "RECORDING") this.setData({ micReady: true });
+  },
+  onRecordMove(e: WechatMiniprogram.CustomEvent) {
+    if (this.data.state === "RECORDING") this.setData({ micWillCancel: !!e.detail.willCancel });
   },
   onRecordCancel() {
-    if (this.data.state === "RECORDING") this.setData({ state: "READY" });
+    if (this.data.state === "RECORDING") this.setData({ state: "READY", micReady: false, micWillCancel: false });
   },
   onRecordError() {
-    if (this.data.state === "RECORDING") this.setData({ state: "READY", statusText: "", secondaryText: "录音失败，请重试" });
+    if (this.data.state === "RECORDING") {
+      this.setData({ state: "READY", statusText: "", secondaryText: "录音失败，请重试", micReady: false, micWillCancel: false });
+    }
   },
   onPermissionDenied() {
     if (this.data.state === "RECORDING" || this.data.state === "READY") {
-      this.setData({ state: "READY", secondaryText: "需要麦克风权限" });
+      showNotice("需要麦克风权限");
+      this.setData({ state: "READY", secondaryText: "需要麦克风权限", micReady: false, micWillCancel: false });
     }
   },
   onRecordFinish(e: WechatMiniprogram.CustomEvent) {
@@ -207,6 +223,7 @@ Page({
     draft.key = newIdempotencyKey();
     draft.transcript = "";
     draft.frozen = null;
+    this.setData({ micReady: false, micWillCancel: false });
     this.submit();
   },
 
@@ -218,11 +235,12 @@ Page({
       this.setData({ state: "CAMERA", photoPath: "", processing: false, statusText: "", secondaryText: message });
       return;
     }
-    if (code === "TRANSCRIBE_FAILED" || code === "RECORD_PARSE_FAILED") {
+    if (code === "TRANSCRIBE_FAILED" || code === "RECORD_PARSE_FAILED" || code === "RECORD_UNCLEAR") {
       draft.audioPath = "";
       draft.key = "";
       draft.transcript = "";
       draft.frozen = null;
+      showNotice(message);
       this.setData({ state: "READY", processing: false, statusText: "", secondaryText: message });
       return;
     }

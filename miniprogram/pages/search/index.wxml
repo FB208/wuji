@@ -52,31 +52,49 @@
     </block>
   </scroll-view>
 
-  <!-- 输入区：录音为主，文字入口降级（文档 5.3） -->
+  <!-- 输入区：微信式语音/文字切换栏（文档 5.3 / 8.3） -->
   <view class="input-area">
-    <view wx:if="{{showTextInput}}" class="text-input-row">
-      <input
-        class="text-input"
-        value="{{textQuery}}"
-        placeholder="输入要找的物品"
-        maxlength="512"
-        confirm-type="search"
-        disabled="{{busy || !ready || state === 'searching'}}"
-        bindinput="onTextInput"
-        bindconfirm="onTextSubmit"
-      />
-      <view class="send-btn brutal-pressable {{busy || !ready || state === 'searching' ? 'disabled' : ''}}" bindtap="onTextSubmit">查找</view>
+    <view class="input-bar">
+      <view class="mode-toggle" bindtap="toggleTextInput">
+        <view class="icon icon-{{showTextInput ? 'mic' : 'kbd'}}"></view>
+      </view>
+      <block wx:if="{{showTextInput}}">
+        <input
+          class="text-input"
+          value="{{textQuery}}"
+          placeholder="输入要找的物品"
+          maxlength="512"
+          confirm-type="search"
+          disabled="{{busy || !ready || state === 'searching'}}"
+          bindinput="onTextInput"
+          bindconfirm="onTextSubmit"
+        />
+        <view class="send-btn brutal-pressable {{busy || !ready || state === 'searching' ? 'disabled' : ''}}" bindtap="onTextSubmit">查找</view>
+      </block>
+      <view wx:else class="h2t-fill">
+        <hold-to-talk
+          id="h2t"
+          compact="{{true}}"
+          idle-text="按住说要找什么"
+          disabled="{{busy || !ready || state === 'searching'}}"
+          bind:recordfinish="onRecordFinish"
+          bind:recorderror="onRecordError"
+          bind:permissiondenied="onPermissionDenied"
+        />
+      </view>
     </view>
-    <view class="keyboard-entry text-hint" bindtap="toggleTextInput">
-      {{showTextInput ? "收起键盘输入" : "用键盘输入"}}
-    </view>
-    <hold-to-talk
-      id="h2t"
-      idle-text="按住说要找什么"
-      disabled="{{busy || !ready || state === 'searching'}}"
-      bind:recordfinish="onRecordFinish"
-      bind:recorderror="onRecordError"
-      bind:permissiondenied="onPermissionDenied"
-    />
   </view>
+
+  <notice-panel
+    visible="{{notice && notice.visible}}"
+    title="{{notice.title}}"
+    text="{{notice.text}}"
+    secondary-text="{{notice.secondaryText}}"
+    confirm-text="{{notice.confirmText}}"
+    cancel-text="{{notice.cancelText}}"
+    editable="{{notice.editable}}"
+    placeholder-text="{{notice.placeholderText}}"
+    bind:confirm="onNoticeConfirm"
+    bind:cancel="onNoticeCancel"
+  />
 </view>

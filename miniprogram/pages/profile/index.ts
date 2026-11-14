@@ -3,9 +3,11 @@ import { request, ApiError, clearToken } from "../../services/api";
 import { ensureLogin, refreshMe } from "../../services/auth";
 import { PageScope, ScopeOperation } from "../../services/page-scope";
 import { store, Scope } from "../../store/index";
+import { bindNotice, registerNotice, showNotice, confirmNotice, promptNotice } from "../../services/notice";
 
 Page({
   data: {
+    notice: null as any,
     nickname: "",
     avatarUrl: "",
     familyName: "",
@@ -25,6 +27,7 @@ Page({
     this._guard = new PageScope();
   },
   onShow() {
+    registerNotice(bindNotice(this));
     const guard = this._guard as PageScope;
     guard.show();
     this.activate();
@@ -83,6 +86,7 @@ Page({
     await this.loadItemCount(scope);
   },
   onHide() {
+    registerNotice(null);
     (this._guard as PageScope).hide();
   },
   onUnload() {
@@ -164,154 +168,122 @@ Page({
     if (!this.active()) return;
     wx.navigateTo({ url: "/pages/family-list/index" });
   },
-  onCreateFamily() {
+  async onCreateFamily() {
     if (!this.active()) return;
     const op = (this._guard as PageScope).capture();
     const uid = this._sessionScope!.userId;
-    let confirmed = false;
-    wx.showModal({
-      title: "创建家庭组",
-      editable: true,
-      placeholderText: "家庭组名称",
-      success: async (res) => {
-        const guard = this._guard as PageScope;
-        const name = (res.content || "").trim();
-        if (!res.confirm || !name || name.length > 64) return;
-        if (confirmed || !guard.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
-        confirmed = true;
-        let finishOp = op;
-        this.setData({ busy: true });
-        try {
-          const family = await guard.run<{ id: number }>(op, (hooks) =>
-            request<{ id: number }>({
-              path: "/families",
-              method: "POST",
-              data: { name },
-              isCancelled: hooks.isCancelled,
-              onTask: hooks.onTask,
-            })
-          );
-          if (this.clearChangedScope(op) || !guard.isCurrent(op)) return;
-          await refreshMe(false, family.id);
-          if (!guard.isFrameCurrent(op.generation)) return;
-          if (!store.user || store.user.id !== uid) {
-            this.clearChangedScope(op);
-            return;
-          }
-          const newScope = store.captureScope();
-          finishOp = guard.capture();
-          this._sessionScope = newScope;
-          const cur = store.currentFamily();
-          this.setData({
-            ready: true,
-            nickname: store.user.nickname || "微信用户",
-            avatarUrl: store.user.avatar_url || "",
-            familyName: cur ? cur.name : "选择家庭",
-            familyCount: store.families.length,
-            noFamily: !newScope.familyId,
-            itemCount: newScope.familyId ? null : 0,
-          });
-          if (newScope.familyId) await this.loadItemCount(newScope);
-          if (!guard.isCurrent(finishOp) || !store.user || store.user.id !== uid) return;
-          wx.showToast({ title: "已创建", icon: "none" });
-        } catch (err) {
-          if (this.clearChangedScope(finishOp) || !guard.isCurrent(finishOp)) return;
-          const message = err instanceof ApiError ? err.message : "创建失败，请重试";
-          wx.showToast({ title: message, icon: "none" });
-        } finally {
-          if (guard.isCurrent(finishOp)) this.setData({ busy: false });
-        }
-      },
-    });
+    const name = ((await promptNotice({ title: "创建家庭组", placeholderText: "家庭组名称", confirmText: "创建" })) || "").trim();
+    const guard = this._guard as PageScope;
+    if (!name || name.length > 64) return;
+    if (!guard.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
+    let finishOp = op;
+    this.setData({ busy: true });
+    try {
+      const family = await guard.run<{ id: number }>(op, (hooks) =>
+        request<{ id: number }>({
+          path: "/families",
+          method: "POST",
+          data: { name },
+          isCancelled: hooks.isCancelled,
+          onTask: hooks.onTask,
+        })
+      );
+      if (this.clearChangedScope(op) || !guard.isCurrent(op)) return;
+      await refreshMe(false, family.id);
+      if (!guard.isFrameCurrent(op.generation)) return;
+      if (!store.user || store.user.id !== uid) {
+        this.clearChangedScope(op);
+        return;
+      }
+      const newScope = store.captureScope();
+      finishOp = guard.capture();
+      this._sessionScope = newScope;
+      const cur = store.currentFamily();
+      this.setData({
+        ready: true,
+        nickname: store.user.nickname || "微信用户",
+        avatarUrl: store.user.avatar_url || "",
+        familyName: cur ? cur.name : "选择家庭",
+        familyCount: store.families.length,
+        noFamily: !newScope.familyId,
+        itemCount: newScope.familyId ? null : 0,
+      });
+      if (newScope.familyId) await this.loadItemCount(newScope);
+      if (!guard.isCurrent(finishOp) || !store.user || store.user.id !== uid) return;
+      showNotice("已创建");
+    } catch (err) {
+      if (this.clearChangedScope(finishOp) || !guard.isCurrent(finishOp)) return;
+      const message = err instanceof ApiError ? err.message : "创建失败，请重试";
+      showNotice(message);
+    } finally {
+      if (guard.isCurrent(finishOp)) this.setData({ busy: false });
+    }
   },
   onHowToJoin() {
     if (!this.active()) return;
-    wx.showModal({
-      title: "如何加入家庭",
-      content: "请家人在家庭页分享邀请卡片给你，点击卡片即可加入。",
-      showCancel: false,
-    });
+    showNotice({ title: "如何加入家庭", text: "请家人在家庭页分享邀请卡片给你，点击卡片即可加入。" });
   },
   onPrivacy() {
     if (!this.active()) return;
-    wx.showModal({
+    showNotice({
       title: "隐私说明",
-      content:
-        "照片仅用于保存和展示物品外观；语音仅用于转写为文字后记录和查找物品，转写完成后语音文件即被删除；家庭组成员可以访问该家庭组内全部物品记录。",
-      showCancel: false,
+      text: "照片仅用于保存和展示物品外观；语音仅用于转写为文字后记录和查找物品，转写完成后语音文件即被删除；家庭组成员可以访问该家庭组内全部物品记录。",
     });
   },
   onFeedback() {
     if (!this.active()) return;
-    wx.showToast({ title: "可通过小程序客服反馈问题", icon: "none" });
+    showNotice("可通过小程序客服反馈问题");
   },
-  onPurgeDeleted() {
+  async onPurgeDeleted() {
     if (!this.active() || !this._sessionScope!.familyId) return;
     const guard = this._guard as PageScope;
     const op = guard.capture();
     const uid = this._sessionScope!.userId;
     const fid = this._sessionScope!.familyId;
-    let fired = false;
-    wx.showModal({
-      title: "清理已删除记录",
-      content: "将永久删除当前家庭组的已删除物品及其照片，无法恢复。",
-      success: async (res) => {
-        if (!res.confirm || fired) return;
-        const g = this._guard as PageScope;
-        if (!g.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
-        fired = true;
-        this.setData({ busy: true });
-        try {
-          const data = await g.run<{ purged: number }>(op, (hooks) =>
-            request<{ purged: number }>({
-              path: `/families/${fid}/purge-deleted`,
-              method: "POST",
-              isCancelled: hooks.isCancelled,
-              onTask: hooks.onTask,
-            })
-          );
-          if (this.clearChangedScope(op) || !g.isCurrent(op)) return;
-          wx.showToast({ title: data.purged > 0 ? `已清理 ${data.purged} 条` : "没有已删除记录", icon: "none" });
-        } catch (err) {
-          if (this.clearChangedScope(op) || !g.isCurrent(op)) return;
-          const message = err instanceof ApiError ? err.message : "清理失败，请重试";
-          wx.showToast({ title: message, icon: "none" });
-        } finally {
-          if (g.isCurrent(op)) this.setData({ busy: false });
-        }
-      },
-    });
+    const ok = await confirmNotice({ title: "清理已删除记录", text: "将永久删除当前家庭组的已删除物品及其照片，无法恢复。", confirmText: "清理" });
+    const g = this._guard as PageScope;
+    if (!ok || !g.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
+    this.setData({ busy: true });
+    try {
+      const data = await g.run<{ purged: number }>(op, (hooks) =>
+        request<{ purged: number }>({
+          path: `/families/${fid}/purge-deleted`,
+          method: "POST",
+          isCancelled: hooks.isCancelled,
+          onTask: hooks.onTask,
+        })
+      );
+      if (this.clearChangedScope(op) || !g.isCurrent(op)) return;
+      showNotice(data.purged > 0 ? `已清理 ${data.purged} 条` : "没有已删除记录");
+    } catch (err) {
+      if (this.clearChangedScope(op) || !g.isCurrent(op)) return;
+      const message = err instanceof ApiError ? err.message : "清理失败，请重试";
+      showNotice(message);
+    } finally {
+      if (g.isCurrent(op)) this.setData({ busy: false });
+    }
   },
-  onDeleteAccount() {
+  async onDeleteAccount() {
     if (!this.active()) return;
     const guard = this._guard as PageScope;
     const op = guard.capture();
     const uid = this._sessionScope!.userId;
-    let fired = false;
-    wx.showModal({
-      title: "注销账号",
-      editable: true,
-      placeholderText: "请输入「注销」确认",
-      success: async (res) => {
-        if (!res.confirm || fired || (res.content || "").trim() !== "注销") return;
-        const g = this._guard as PageScope;
-        if (!g.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
-        fired = true;
-        this.setData({ busy: true });
-        try {
-          await g.run(op, (hooks) =>
-            request({ path: "/me", method: "DELETE", isCancelled: hooks.isCancelled, onTask: hooks.onTask })
-          );
-          clearToken();
-          store.clearSession();
-          wx.reLaunch({ url: "/pages/launch/index" });
-        } catch (err) {
-          if (this.clearChangedScope(op) || !g.isCurrent(op)) return;
-          const message = err instanceof ApiError ? err.message : "注销失败，请重试";
-          this.setData({ busy: false });
-          wx.showToast({ title: message, icon: "none" });
-        }
-      },
-    });
+    const input = await promptNotice({ title: "注销账号", text: "注销后账号与全部数据将被删除，无法恢复。", placeholderText: "请输入「注销」确认", confirmText: "注销" });
+    const g = this._guard as PageScope;
+    if (input === null || (input || "").trim() !== "注销" || !g.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
+    this.setData({ busy: true });
+    try {
+      await g.run(op, (hooks) =>
+        request({ path: "/me", method: "DELETE", isCancelled: hooks.isCancelled, onTask: hooks.onTask })
+      );
+      clearToken();
+      store.clearSession();
+      wx.reLaunch({ url: "/pages/launch/index" });
+    } catch (err) {
+      if (this.clearChangedScope(op) || !g.isCurrent(op)) return;
+      const message = err instanceof ApiError ? err.message : "注销失败，请重试";
+      this.setData({ busy: false });
+      showNotice(message);
+    }
   },
 });

@@ -3,6 +3,7 @@ import { uploadFile, request, ApiError } from "../../services/api";
 import { ensureLogin, refreshMe } from "../../services/auth";
 import { PageScope, ScopeOperation } from "../../services/page-scope";
 import { store, Scope } from "../../store/index";
+import { bindNotice, registerNotice, showNotice } from "../../services/notice";
 
 interface SearchItem {
   id: number;
@@ -56,6 +57,7 @@ function freezeCopy<T>(value: T): T {
 
 Page({
   data: {
+    notice: null as any,
     state: "ready" as UiState,
     ready: false,
     busy: false,
@@ -78,6 +80,7 @@ Page({
     this._guard = new PageScope();
   },
   onShow() {
+    registerNotice(bindNotice(this));
     const guard = this._guard as PageScope;
     guard.show();
     this.resumeAuth();
@@ -149,6 +152,7 @@ Page({
     }
   },
   onHide() {
+    registerNotice(null);
     const guard = this._guard as PageScope;
     guard.hide();
     const holder = (this as any).selectComponent && (this as any).selectComponent("#h2t");
@@ -192,11 +196,11 @@ Page({
     if (!this.session() || this.data.state === "searching") return;
     // 麦克风不可用时使用文字（文档 5.3 / 14.1）
     this.setData({ showTextInput: true });
-    wx.showToast({ title: "麦克风不可用，可输入文字查找", icon: "none" });
+    showNotice("麦克风不可用，可输入文字查找");
   },
   onRecordError(e: WechatMiniprogram.CustomEvent) {
     if (!this.session() || this.data.state === "searching") return;
-    wx.showToast({ title: e.detail.message || "录音失败，请重试", icon: "none" });
+    showNotice(e.detail.message || "录音失败，请重试");
   },
   toggleTextInput() {
     if (!this.session() || this.data.state === "searching") return;
@@ -211,7 +215,7 @@ Page({
     if (this.data.state === "searching") return;
     const query = this.data.textQuery.trim();
     if (!query || query.length > 512) {
-      wx.showToast({ title: query ? "输入过长" : "请输入查找内容", icon: "none" });
+      showNotice(query ? "输入过长" : "请输入查找内容");
       return;
     }
     this.setData({ textQuery: "" });

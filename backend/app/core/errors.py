@@ -57,6 +57,10 @@ def record_parse_failed(message: str = "请重新说清楚物品和位置") -> A
     return AppError("RECORD_PARSE_FAILED", message, status_code=422)
 
 
+def record_unclear(message: str = "没听清物品和位置，请说清楚是什么、放在哪里") -> AppError:
+    return AppError("RECORD_UNCLEAR", message, status_code=422)
+
+
 def record_failed(message: str = "入库失败，请重试") -> AppError:
     return AppError("RECORD_FAILED", message, status_code=500, retryable=True)
 

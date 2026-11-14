@@ -117,6 +117,21 @@ async def test_record_create_move():
 
 
 @pytest.mark.parametrize("raw", [
+    {"operation": "create", "target_item_id": None, "name": "", "location_text": "l", "candidate_item_ids": []},
+    {"operation": "create", "target_item_id": None, "name": "n", "location_text": "", "candidate_item_ids": []},
+    {"operation": "create", "target_item_id": None, "name": "", "location_text": "", "candidate_item_ids": []},
+    {"operation": "move", "target_item_id": 999, "name": "n", "location_text": "", "candidate_item_ids": [999]},
+    {"operation": "move", "target_item_id": 1, "name": "", "location_text": "", "candidate_item_ids": [1]},
+])
+async def test_record_unclear_not_parse_failed(raw):
+    with patch.object(sem.SemanticProvider, "_chat", new=AsyncMock(return_value=raw)):
+        with pytest.raises(AppError) as ei:
+            await sem.semantic_provider.judge_record("t", [_item(1), _item(2)])
+    assert ei.value.code == "RECORD_UNCLEAR"
+    assert ei.value.retryable is False
+
+
+@pytest.mark.parametrize("raw", [
     {"operation": "move", "target_item_id": True, "name": "", "location_text": "l", "candidate_item_ids": [1]},
     {"operation": "create", "target_item_id": None, "name": "n", "location_text": "l", "candidate_item_ids": ["1"]},
     {"operation": "create", "target_item_id": None, "name": "n", "location_text": "l", "candidate_item_ids": [], "extra": 1},

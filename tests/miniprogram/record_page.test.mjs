@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { loadTsModule, mockWx, makePage, MP_DIR } from "./helpers/loader.mjs";
+import { loadTsModule, mockWx, makePage, MP_DIR, noticeMock } from "./helpers/loader.mjs";
 const K = (s) => MP_DIR.replaceAll(path.sep, "/") + "/" + s;
 const PAGE = path.join(MP_DIR, "pages/record/index.ts");
 function deferred() { let r, rej; const p = new Promise((res, j) => { r = res; rej = j; }); return { p, resolve: r, reject: rej }; }
@@ -53,6 +53,7 @@ function env(overrides = {}) {
       [K("services/page-scope")]: scopeMod,
       [K("store/index")]: storeMod,
       [K("services/upload")]: uploadMod,
+      [K("services/notice")]: noticeMock(wxBase),
     },
   });
   const page = makePage(def);

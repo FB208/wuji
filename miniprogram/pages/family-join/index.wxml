@@ -31,4 +31,17 @@
     />
     <brutal-button wx:if="{{joined}}" text="回到首页" color="yellow" size="large" bind:tap="goHome" />
   </block>
+
+  <notice-panel
+    visible="{{notice && notice.visible}}"
+    title="{{notice.title}}"
+    text="{{notice.text}}"
+    secondary-text="{{notice.secondaryText}}"
+    confirm-text="{{notice.confirmText}}"
+    cancel-text="{{notice.cancelText}}"
+    editable="{{notice.editable}}"
+    placeholder-text="{{notice.placeholderText}}"
+    bind:confirm="onNoticeConfirm"
+    bind:cancel="onNoticeCancel"
+  />
 </view>

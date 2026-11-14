@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { loadTsModule, mockWx, MP_DIR } from "./helpers/loader.mjs";
+import { loadTsModule, mockWx, MP_DIR, noticeMock } from "./helpers/loader.mjs";
 
 const K = (s) => MP_DIR.replaceAll(path.sep, "/") + "/" + s;
 
@@ -13,7 +13,10 @@ function env() {
     removeStorageSync: (k) => storage.delete(k),
   });
   const storeMod = loadTsModule(K("store/index.ts"), { globals: { wx } });
-  const apiMod = loadTsModule(K("services/api.ts"), { globals: { wx } });
+  const apiMod = loadTsModule(K("services/api.ts"), {
+    globals: { wx },
+    mocks: { [K("services/notice")]: noticeMock(wx) },
+  });
   const scopeMod = loadTsModule(K("services/page-scope.ts"), {
     globals: {},
     mocks: {

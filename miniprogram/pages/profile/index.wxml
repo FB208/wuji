@@ -72,4 +72,17 @@
     <view class="empty-text">还没有家庭</view>
     <view class="empty-btn brutal-pressable" bindtap="onCreateFamily">创建家庭</view>
   </view>
+
+  <notice-panel
+    visible="{{notice && notice.visible}}"
+    title="{{notice.title}}"
+    text="{{notice.text}}"
+    secondary-text="{{notice.secondaryText}}"
+    confirm-text="{{notice.confirmText}}"
+    cancel-text="{{notice.cancelText}}"
+    editable="{{notice.editable}}"
+    placeholder-text="{{notice.placeholderText}}"
+    bind:confirm="onNoticeConfirm"
+    bind:cancel="onNoticeCancel"
+  />
 </view>

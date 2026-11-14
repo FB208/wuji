@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { loadTsModule, mockWx, makePage, MP_DIR } from "./helpers/loader.mjs";
+import { loadTsModule, mockWx, makePage, MP_DIR, noticeMock } from "./helpers/loader.mjs";
 
 const PAGE = path.join(MP_DIR, "pages/search/index.ts");
 const WXML = path.join(MP_DIR, "pages/search/index.wxml");
@@ -77,6 +77,7 @@ function env(overrides = {}) {
       [K("services/auth")]: authMod,
       [K("services/page-scope")]: scopeMod,
       [K("store/index")]: storeMod,
+      [K("services/notice")]: noticeMock(wx),
     },
   });
   const page = makePage(def);

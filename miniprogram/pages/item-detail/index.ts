@@ -4,11 +4,11 @@ import { ensureLogin, refreshMe } from "../../services/auth";
 import { PageScope, ScopeOperation } from "../../services/page-scope";
 import { store, Scope } from "../../store/index";
 import { formatTime } from "../../utils/format";
-
-const NAV_DELAY_MS = 600;
+import { bindNotice, registerNotice, showNotice, confirmNotice } from "../../services/notice";
 
 Page({
   data: {
+    notice: null as any,
     item: null as any,
     updatedAtText: "",
     imageFailed: false,
@@ -50,6 +50,7 @@ Page({
     }
   },
   onShow() {
+    registerNotice(bindNotice(this));
     const guard = this._guard as PageScope;
     guard.show();
     if (!this._id || this._invalidRoute) return;
@@ -109,6 +110,7 @@ Page({
     await this.loadItem();
   },
   onHide() {
+    registerNotice(null);
     if (this._navTimer !== null) {
       clearTimeout(this._navTimer);
       this._navTimer = null;
@@ -226,82 +228,68 @@ Page({
     if (!this.active() || this.data.deleting || this.data.deleted || this.data.needsRefresh) return;
     wx.navigateTo({ url: `/pages/item-edit/index?id=${this._id}&family_id=${this._boundFamilyId}` });
   },
-  onDelete() {
+  async onDelete() {
     if (!this.active() || this.data.deleting || this.data.deleted || this.data.needsRefresh) return;
     const guard = this._guard as PageScope;
     const op = guard.capture();
     const uid = this._sessionScope!.userId;
     const fid = this._boundFamilyId;
     const version = this._loaded!.version;
-    let fired = false;
-    wx.showModal({
-      title: "删除记录",
-      content: "删除后将无法继续查找这件物品。",
-      confirmText: "删除",
-      confirmColor: "#e64340",
-      success: async (res) => {
-        if (!res.confirm || fired) return;
-        const g = this._guard as PageScope;
-        if (!g.isCurrent(op) || this.data.busy || this.data.deleting || !store.user || store.user.id !== uid) return;
-        fired = true;
-        this.setData({ deleting: true });
-        let sent = false;
+    const ok = await confirmNotice({ title: "删除记录", text: "删除后将无法继续查找这件物品。", confirmText: "删除" });
+    const g = this._guard as PageScope;
+    if (!ok || !g.isCurrent(op) || this.data.busy || this.data.deleting || !store.user || store.user.id !== uid) return;
+    this.setData({ deleting: true });
+    let sent = false;
+    try {
+      sent = true;
+      await g.run(op, (hooks) =>
+        request({
+          path: `/items/${this._id}?family_id=${fid}&expected_version=${version}`,
+          method: "DELETE",
+          isCancelled: hooks.isCancelled,
+          onTask: hooks.onTask,
+        })
+      );
+      if (g.scopeChanged(op)) {
+        this.clearForScopeChange();
+        return;
+      }
+      if (!g.isCurrent(op) || !store.user || store.user.id !== uid) return;
+      this.setData({ deleted: true, deleting: false });
+      showNotice("已删除", () => {
+        const gg = this._guard as PageScope;
+        if (!gg.isCurrent(op)) return;
+        const pages = typeof getCurrentPages === "function" ? getCurrentPages() : [];
+        if (pages.length > 1) wx.navigateBack();
+        else wx.switchTab({ url: "/pages/items/index" });
+      });
+    } catch (err) {
+      if (g.scopeChanged(op)) {
+        this.clearForScopeChange();
+        return;
+      }
+      if (!g.isCurrent(op)) return;
+      if (err instanceof ApiError && err.statusCode === 409) {
+        this.setData({ deleting: false, needsRefresh: true, errorText: "记录已被修改，请刷新最新记录" });
+        return;
+      }
+      if (err instanceof ApiError && err.statusCode === 403) {
         try {
-          sent = true;
-          await g.run(op, (hooks) =>
-            request({
-              path: `/items/${this._id}?family_id=${fid}&expected_version=${version}`,
-              method: "DELETE",
-              isCancelled: hooks.isCancelled,
-              onTask: hooks.onTask,
-            })
-          );
-          if (g.scopeChanged(op)) {
-            this.clearForScopeChange();
-            return;
-          }
-          if (!g.isCurrent(op) || !store.user || store.user.id !== uid) return;
-          this.setData({ deleted: true, deleting: false });
-          wx.showToast({ title: "已删除", icon: "none" });
-          const timer = setTimeout(() => {
-            if (this._navTimer !== timer) return;
-            this._navTimer = null;
-            const gg = this._guard as PageScope;
-            if (!gg.isCurrent(op)) return;
-            const pages = typeof getCurrentPages === "function" ? getCurrentPages() : [];
-            if (pages.length > 1) wx.navigateBack();
-            else wx.switchTab({ url: "/pages/items/index" });
-          }, NAV_DELAY_MS);
-          this._navTimer = timer;
-        } catch (err) {
-          if (g.scopeChanged(op)) {
-            this.clearForScopeChange();
-            return;
-          }
-          if (!g.isCurrent(op)) return;
-          if (err instanceof ApiError && err.statusCode === 409) {
-            this.setData({ deleting: false, needsRefresh: true, errorText: "记录已被修改，请刷新最新记录" });
-            return;
-          }
-          if (err instanceof ApiError && err.statusCode === 403) {
-            try {
-              await refreshMe();
-            } catch (_) {}
-            if (g.scopeChanged(op)) {
-              this.clearForScopeChange();
-              return;
-            }
-            if (!g.isCurrent(op)) return;
-          }
-          if (sent) {
-            this.setData({ deleting: false, needsRefresh: true, errorText: "结果未确认，刷新查看" });
-            return;
-          }
-          const message = err instanceof ApiError ? err.message : "删除失败，请重试";
-          this.setData({ deleting: false, errorText: message });
+          await refreshMe();
+        } catch (_) {}
+        if (g.scopeChanged(op)) {
+          this.clearForScopeChange();
+          return;
         }
-      },
-    });
+        if (!g.isCurrent(op)) return;
+      }
+      if (sent) {
+        this.setData({ deleting: false, needsRefresh: true, errorText: "结果未确认，刷新查看" });
+        return;
+      }
+      const message = err instanceof ApiError ? err.message : "删除失败，请重试";
+      this.setData({ deleting: false, errorText: message });
+    }
   },
   goItems() {
     const guard = this._guard as PageScope;

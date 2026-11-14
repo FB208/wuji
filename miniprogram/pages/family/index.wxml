@@ -53,4 +53,17 @@
     <view wx:if="{{!isOwner}}" class="leave brutal-card brutal-pressable" bindtap="onLeave">退出家庭组</view>
     <view wx:if="{{isOwner}}" class="leave brutal-card brutal-pressable" bindtap="onDissolve">解散家庭组</view>
   </block>
+
+  <notice-panel
+    visible="{{notice && notice.visible}}"
+    title="{{notice.title}}"
+    text="{{notice.text}}"
+    secondary-text="{{notice.secondaryText}}"
+    confirm-text="{{notice.confirmText}}"
+    cancel-text="{{notice.cancelText}}"
+    editable="{{notice.editable}}"
+    placeholder-text="{{notice.placeholderText}}"
+    bind:confirm="onNoticeConfirm"
+    bind:cancel="onNoticeCancel"
+  />
 </view>

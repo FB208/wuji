@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { loadTsModule, mockWx, MP_DIR } from "./helpers/loader.mjs";
+import { loadTsModule, mockWx, MP_DIR, noticeMock } from "./helpers/loader.mjs";
 
 const REC = path.join(MP_DIR, "services/recorder.ts");
 const API = path.join(MP_DIR, "services/api.ts");
@@ -64,7 +64,7 @@ test("api: 坏JSON统一ApiError", async () => {
   const wx = mockWx({
     request: (o) => o.success({ statusCode: 200, data: "not json", header: {} }),
   });
-  const api = loadTsModule(API, { globals: { wx } });
+  const api = loadTsModule(API, { globals: { wx }, mocks: { [MP_DIR.replaceAll(path.sep, "/") + "/services/notice"]: noticeMock(wx) } });
   await assert.rejects(api.request({ path: "/x" }), (e) => e.code === "INVALID_RESPONSE");
 });
 
@@ -76,7 +76,7 @@ test("api: 401单飞恢复一次", async () => {
       o.success({ statusCode: 200, data: { data: 1 }, header: {} });
     },
   });
-  const api = loadTsModule(API, { globals: { wx } });
+  const api = loadTsModule(API, { globals: { wx }, mocks: { [MP_DIR.replaceAll(path.sep, "/") + "/services/notice"]: noticeMock(wx) } });
   api.registerAuthRecovery(async () => { loginCalls++; return true; });
   const [a, b] = await Promise.all([api.request({ path: "/a" }), api.request({ path: "/b" })]);
   assert.equal(loginCalls, 1);

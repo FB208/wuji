@@ -1,0 +1,85 @@
+/* 组件内自带 brutal 样式副本，不依赖全局类（隔离模式下全局样式不生效） */
+.brutal-card {
+  background: #ffffff;
+  border: 4rpx solid #111111;
+  border-radius: 20rpx;
+  box-shadow: 8rpx 8rpx 0 #111111;
+}
+
+.brutal-pressable {
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+
+.brutal-pressable:active {
+  transform: translate(6rpx, 6rpx);
+  box-shadow: 2rpx 2rpx 0 #111111;
+}
+
+.mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 17, 17, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+
+.panel {
+  width: 560rpx;
+  padding: 48rpx 40rpx;
+  text-align: center;
+}
+
+.title {
+  font-size: 36rpx;
+  font-weight: 700;
+  margin-bottom: 20rpx;
+}
+
+.text {
+  font-size: 32rpx;
+  font-weight: 700;
+  word-break: break-all;
+}
+
+.text.sub {
+  margin-top: 16rpx;
+  font-size: 28rpx;
+  font-weight: 400;
+  color: #555555;
+}
+
+.input {
+  margin-top: 28rpx;
+  padding: 16rpx 20rpx;
+  border: 4rpx solid #111111;
+  border-radius: 12rpx;
+  background: #ffffff;
+  font-size: 30rpx;
+  text-align: left;
+}
+
+.btns {
+  margin-top: 40rpx;
+  display: flex;
+  gap: 24rpx;
+}
+
+.btn {
+  flex: 1;
+  padding: 20rpx 0;
+  border: 4rpx solid #111111;
+  border-radius: 16rpx;
+  box-shadow: 6rpx 6rpx 0 #111111;
+  font-weight: 700;
+  font-size: 30rpx;
+}
+
+.btn.confirm {
+  background: #ffd84d;
+}
+
+.btn.cancel {
+  background: #ffffff;
+}

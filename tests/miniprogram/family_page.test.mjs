@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { loadTsModule, mockWx, makePage, MP_DIR } from "./helpers/loader.mjs";
+import { loadTsModule, mockWx, makePage, MP_DIR, noticeMock } from "./helpers/loader.mjs";
 const K = (s) => MP_DIR.replaceAll(path.sep, "/") + "/" + s;
 const PAGE = path.join(MP_DIR, "pages/family/index.ts");
 function deferred() { let r, rej; const p = new Promise((res, j) => { r = res; rej = j; }); return { p, resolve: r, reject: rej }; }
@@ -50,6 +50,7 @@ function env(overrides = {}) {
     mocks: {
       [K("services/api")]: apiMod, [K("services/auth")]: authMod,
       [K("services/page-scope")]: scopeMod, [K("store/index")]: storeMod,
+      [K("services/notice")]: noticeMock(wxBase),
     },
   });
   const page = makePage(def);
@@ -271,11 +272,13 @@ test("vi 非数组members不崩+可retry", async () => {
 });
 
 function beginMutation(e, action) {
-  if (action === "rename") e.page.onRename();
-  else if (action === "remove") e.page.onRemoveMember({ currentTarget: { dataset: { id: 2 } } });
-  else e.page.onLeave();
+  let p;
+  if (action === "rename") p = e.page.onRename();
+  else if (action === "remove") p = e.page.onRemoveMember({ currentTarget: { dataset: { id: 2 } } });
+  else p = e.page.onLeave();
   assert.equal(e.calls.modals.length, 1);
-  return e.calls.modals[0].success({ confirm: true, content: "新家" });
+  e.calls.modals[0].success({ confirm: true, content: "新家" });
+  return p;
 }
 for (const action of ["rename", "remove", "leave"]) {
   for (const boundary of ["hide", "uid"]) {

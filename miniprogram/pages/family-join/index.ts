@@ -3,12 +3,13 @@ import { request, ApiError } from "../../services/api";
 import { ensureLogin, refreshMe } from "../../services/auth";
 import { PageScope, ScopeOperation } from "../../services/page-scope";
 import { store, Scope } from "../../store/index";
+import { bindNotice, registerNotice, showNotice } from "../../services/notice";
 
 const TOKEN_MAX = 4096;
-const NAV_DELAY_MS = 600;
 
 Page({
   data: {
+    notice: null as any,
     familyName: "",
     ownerNickname: "",
     invalid: false,
@@ -39,6 +40,7 @@ Page({
     }
   },
   onShow() {
+    registerNotice(bindNotice(this));
     const guard = this._guard as PageScope;
     guard.show();
     if (!this._token) return;
@@ -78,6 +80,7 @@ Page({
     await this.preview();
   },
   onHide() {
+    registerNotice(null);
     if (this._navTimer !== null) {
       clearTimeout(this._navTimer);
       this._navTimer = null;
@@ -206,13 +209,11 @@ Page({
       this._sessionScope = store.captureScope();
       if (!guard.isCurrent(navOp)) return;
       this.setData({ joined: true });
-      wx.showToast({ title: "加入成功", icon: "none" });
-      this._navTimer = setTimeout(() => {
-        this._navTimer = null;
+      showNotice("加入成功", () => {
         const g = this._guard as PageScope;
         if (!g.isCurrent(navOp)) return;
         wx.switchTab({ url: "/pages/home/index" });
-      }, NAV_DELAY_MS);
+      });
     } catch (err) {
       if (guard.scopeChanged(op)) {
         this.clearForScopeChange();

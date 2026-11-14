@@ -1,5 +1,5 @@
 <view
-  class="talk-btn {{recording ? 'recording' : ''}} {{willCancel ? 'cancel' : ''}} {{disabled ? 'disabled' : ''}}"
+  class="talk-btn {{recording ? 'recording' : ''}} {{starting ? 'starting' : ''}} {{willCancel ? 'cancel' : ''}} {{disabled ? 'disabled' : ''}} {{compact ? 'compact' : ''}}"
   bind:touchstart="onTouchStart"
   bind:touchmove="onTouchMove"
   bind:touchend="onTouchEnd"
@@ -7,5 +7,6 @@
 >
   <block wx:if="{{!recording}}">{{idleText}}</block>
   <block wx:elif="{{willCancel}}">松开取消</block>
+  <block wx:elif="{{starting}}">正在开启麦克风…</block>
   <block wx:else>松开完成 · 上滑取消（{{seconds}}s）</block>
 </view>

@@ -9,6 +9,8 @@ os.environ.setdefault("AWS_ACCESS_KEY_ID", "test-dummy")
 os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "test-dummy")
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 os.environ.setdefault("AWS_EC2_METADATA_DISABLED", "true")
+# 单测不读真实 .env：强制 development，避免生产必填密钥校验影响 mock 测试
+os.environ["APP_ENV"] = "development"
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))

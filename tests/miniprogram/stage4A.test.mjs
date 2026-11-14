@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { loadTsModule, mockWx, MP_DIR, makePage } from "./helpers/loader.mjs";
+import { loadTsModule, mockWx, MP_DIR, makePage, noticeMock } from "./helpers/loader.mjs";
 
 const REC = path.join(MP_DIR, "services/recorder.ts");
 const API = path.join(MP_DIR, "services/api.ts");
@@ -152,6 +152,7 @@ test("component: touchend传递willCancel，touchcancel恒cancel", async () => {
   const pending = Promise.resolve(null);
   const inst = makeComponent({}, { stop: (cancel, p) => { stops.push([cancel, p]); return Promise.resolve(null); } });
   inst._pending = pending;
+  inst._started = true;
   inst.setData({ recording: true, willCancel: true });
   inst.onTouchEnd();
   assert.deepEqual(stops[0], [true, pending]);
@@ -169,7 +170,7 @@ test("api: upload合法错误JSON保留code/retryable/RetryAfter", async () => {
       return { onProgressUpdate: () => {} };
     },
   });
-  const api = loadTsModule(API, { globals: { wx } });
+  const api = loadTsModule(API, { globals: { wx }, mocks: { [MP_DIR.replaceAll(path.sep, "/") + "/services/notice"]: noticeMock(wx) } });
   await assert.rejects(api.uploadFile({ path: "/x", filePath: "f", name: "n" }), (e) => {
     assert.equal(e.code, "FAMILY_ITEMS_FULL");
     assert.equal(e.retryable, false);
@@ -186,7 +187,7 @@ test("api: 成功transcript含AUTH_REQUIRED文本不触发恢复", async () => {
       return { onProgressUpdate: () => {} };
     },
   });
-  const api = loadTsModule(API, { globals: { wx } });
+  const api = loadTsModule(API, { globals: { wx }, mocks: { [MP_DIR.replaceAll(path.sep, "/") + "/services/notice"]: noticeMock(wx) } });
   api.registerAuthRecovery(async () => { recovery++; return true; });
   const out = await api.uploadFile({ path: "/x", filePath: "f", name: "n" });
   assert.equal(out.transcript, "AUTH_REQUIRED");
@@ -204,7 +205,7 @@ test("api: 两个并发401只恢复一次各重放一次，再401不循环", asy
     },
     getStorageSync: () => "tok", setStorageSync: () => {},
   });
-  const api = loadTsModule(API, { globals: { wx } });
+  const api = loadTsModule(API, { globals: { wx }, mocks: { [MP_DIR.replaceAll(path.sep, "/") + "/services/notice"]: noticeMock(wx) } });
   api.registerAuthRecovery(async () => { recovery++; await gate; return true; });
   const waiting = Promise.allSettled([api.request({ path: "/a" }), api.request({ path: "/b" })]);
   assert.equal(hits, 2);
@@ -224,7 +225,7 @@ test("api: 恢复等待期间cancel生效不重放", async () => {
     },
     getStorageSync: () => "tok", setStorageSync: () => {},
   });
-  const api = loadTsModule(API, { globals: { wx } });
+  const api = loadTsModule(API, { globals: { wx }, mocks: { [MP_DIR.replaceAll(path.sep, "/") + "/services/notice"]: noticeMock(wx) } });
   api.registerAuthRecovery(async () => { await gate; return true; });
   let cancelled = false;
   const p = api.request({ path: "/a", isCancelled: () => cancelled });
@@ -244,7 +245,7 @@ test("api: 初次send后修改options重放仍原payload", async () => {
     },
     getStorageSync: () => "tok", setStorageSync: () => {},
   });
-  const api = loadTsModule(API, { globals: { wx } });
+  const api = loadTsModule(API, { globals: { wx }, mocks: { [MP_DIR.replaceAll(path.sep, "/") + "/services/notice"]: noticeMock(wx) } });
   api.registerAuthRecovery(async () => true);
   const options = { path: "/x", method: "POST", data: { a: 1, nested: { b: 2 } }, idempotencyKey: "k1" };
   const p = api.request(options);
@@ -256,13 +257,13 @@ test("api: 初次send后修改options重放仍原payload", async () => {
 
 test("api: abort/timeout分别报错，502不恢复", async () => {
   let recovery = 0;
-  const apiA = loadTsModule(API, { globals: { wx: mockWx({ request: (o) => o.fail({ errMsg: "request:fail abort" }), getStorageSync: () => "t" }) } });
+  const apiA = loadTsModule(API, { globals: { wx: mockWx({ request: (o) => o.fail({ errMsg: "request:fail abort" }), getStorageSync: () => "t" }) }, mocks: { [MP_DIR.replaceAll(path.sep, "/") + "/services/notice"]: noticeMock(mockWx()) } });
   apiA.registerAuthRecovery(async () => { recovery++; return true; });
   await assert.rejects(apiA.request({ path: "/x" }), (e) => e.code === "ABORTED");
-  const apiT = loadTsModule(API, { globals: { wx: mockWx({ request: (o) => o.fail({ errMsg: "request:fail timeout" }), getStorageSync: () => "t" }) } });
+  const apiT = loadTsModule(API, { globals: { wx: mockWx({ request: (o) => o.fail({ errMsg: "request:fail timeout" }), getStorageSync: () => "t" }) }, mocks: { [MP_DIR.replaceAll(path.sep, "/") + "/services/notice"]: noticeMock(mockWx()) } });
   apiT.registerAuthRecovery(async () => { recovery++; return true; });
   await assert.rejects(apiT.request({ path: "/x" }), (e) => e.code === "TIMEOUT" && e.retryable === true);
-  const api5 = loadTsModule(API, { globals: { wx: mockWx({ request: (o) => o.success({ statusCode: 502, data: { error: { code: "X", message: "x", retryable: true } }, header: {} }), getStorageSync: () => "t" }) } });
+  const api5 = loadTsModule(API, { globals: { wx: mockWx({ request: (o) => o.success({ statusCode: 502, data: { error: { code: "X", message: "x", retryable: true } }, header: {} }), getStorageSync: () => "t" }) }, mocks: { [MP_DIR.replaceAll(path.sep, "/") + "/services/notice"]: noticeMock(mockWx()) } });
   api5.registerAuthRecovery(async () => { recovery++; return true; });
   await assert.rejects(api5.request({ path: "/x" }), (e) => e.code === "X");
   assert.equal(recovery, 0);
@@ -353,17 +354,20 @@ for (const release of ["touchend", "hide", "detach"]) {
 
 test("component: native onStart前松手取消自己pending", async () => {
   const stops = [];
+  let onStartCb;
   const inst = makeComponent({}, {
     requestPermission: () => Promise.resolve(true),
-    start: (cb) => new Promise(() => {}),
+    start: (cb) => { onStartCb = cb; return new Promise(() => {}); },
     stop: (cancel, expected) => { stops.push([cancel, expected]); return Promise.resolve(null); },
   });
   inst._visible = true;
   await inst.onTouchStart({ touches: [{ clientY: 10 }] });
   const pending = inst._pending;
   assert.ok(pending);
-  assert.equal(inst.data.recording, false);
+  assert.equal(inst.data.recording, true);
   inst.onTouchEnd();
+  assert.equal(stops.length, 0);
+  onStartCb();
   assert.equal(stops.length, 1);
   assert.equal(stops[0][0], true);
   assert.equal(stops[0][1], pending);
@@ -439,7 +443,7 @@ test("api: upload两并发401单飞恢复各重放一次且formData冻结", asyn
     },
     getStorageSync: () => "tok",
   });
-  const api = loadTsModule(API, { globals: { wx } });
+  const api = loadTsModule(API, { globals: { wx }, mocks: { [MP_DIR.replaceAll(path.sep, "/") + "/services/notice"]: noticeMock(wx) } });
   api.registerAuthRecovery(async () => { recovery++; await gate.p; return true; });
   const opts = { path: "/x", filePath: "f", name: "n", formData: { a: 1 } };
   const p1 = api.uploadFile(opts);
@@ -463,7 +467,7 @@ test("api: request重放仍带原Idempotency-Key", async () => {
     },
     getStorageSync: () => "tok",
   });
-  const api = loadTsModule(API, { globals: { wx } });
+  const api = loadTsModule(API, { globals: { wx }, mocks: { [MP_DIR.replaceAll(path.sep, "/") + "/services/notice"]: noticeMock(wx) } });
   api.registerAuthRecovery(async () => true);
   await api.request({ path: "/x", method: "POST", data: {}, idempotencyKey: "k1" });
   assert.equal(headers[0], "k1");
@@ -479,7 +483,7 @@ test("api: onProgress回调收到percent", async () => {
     },
     getStorageSync: () => "tok",
   });
-  const api = loadTsModule(API, { globals: { wx } });
+  const api = loadTsModule(API, { globals: { wx }, mocks: { [MP_DIR.replaceAll(path.sep, "/") + "/services/notice"]: noticeMock(wx) } });
   let pct = 0;
   await api.uploadFile({ path: "/x", filePath: "f", name: "n", onProgress: (p) => { pct = p; } });
   assert.equal(pct, 42);
@@ -490,7 +494,7 @@ test("api: Retry-After HTTP日期解析为ms", async () => {
   const wx = mockWx({
     request: (o) => o.success({ statusCode: 429, data: { error: { code: "RATE_LIMITED", message: "x", retryable: true } }, header: { "Retry-After": future } }),
   });
-  const api = loadTsModule(API, { globals: { wx } });
+  const api = loadTsModule(API, { globals: { wx }, mocks: { [MP_DIR.replaceAll(path.sep, "/") + "/services/notice"]: noticeMock(wx) } });
   await assert.rejects(api.request({ path: "/x" }), (e) => e.retryAfterMs > 0 && e.retryAfterMs <= 6000);
 });
 
@@ -502,7 +506,7 @@ test("api: 502/timeout不清token", async () => {
     setStorageSync: (k, v) => { mem[k] = v; },
     removeStorageSync: (k) => { delete mem[k]; },
   });
-  const api = loadTsModule(API, { globals: { wx } });
+  const api = loadTsModule(API, { globals: { wx }, mocks: { [MP_DIR.replaceAll(path.sep, "/") + "/services/notice"]: noticeMock(wx) } });
   await assert.rejects(api.request({ path: "/x" }), (e) => e.code === "X");
   assert.equal(mem.wuji_access_token, "tok");
 });
@@ -556,7 +560,7 @@ function makeAuthEnv() {
       });
     },
   });
-  const api = loadTsModule(API, { globals: { wx } });
+  const api = loadTsModule(API, { globals: { wx }, mocks: { [MP_DIR.replaceAll(path.sep, "/") + "/services/notice"]: noticeMock(wx) } });
   const storeMod = loadTsModule(STORE, { globals: { wx } });
   const auth = loadTsModule(path.join(MP_DIR, "services/auth.ts"), {
     globals: { wx },
@@ -610,7 +614,7 @@ test("auth: refreshMe网络失败保留token", async () => {
     getStorageSync: (k) => mem[k],
     removeStorageSync: (k) => { delete mem[k]; },
   });
-  const api = loadTsModule(API, { globals: { wx } });
+  const api = loadTsModule(API, { globals: { wx }, mocks: { [MP_DIR.replaceAll(path.sep, "/") + "/services/notice"]: noticeMock(wx) } });
   const auth = loadTsModule(path.join(MP_DIR, "services/auth.ts"), {
     globals: { wx },
     mocks: {
@@ -763,7 +767,7 @@ test("auth: launch重试是明确交互登录", async () => {
   const calls = [];
   const wx = mockWx();
   const storeMod = loadTsModule(path.join(MP_DIR, "store/index.ts"), { globals: { wx } });
-  const apiMod = loadTsModule(path.join(MP_DIR, "services/api.ts"), { globals: { wx } });
+  const apiMod = loadTsModule(path.join(MP_DIR, "services/api.ts"), { globals: { wx }, mocks: { [MP_DIR.replaceAll(path.sep, "/") + "/services/notice"]: noticeMock(wx) } });
   const scopeMod = loadTsModule(path.join(MP_DIR, "services/page-scope.ts"), {
     globals: {},
     mocks: {

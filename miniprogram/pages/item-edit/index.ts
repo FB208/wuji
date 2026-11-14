@@ -4,11 +4,11 @@ import { ensureLogin, refreshMe } from "../../services/auth";
 import { uploadImage } from "../../services/upload";
 import { PageScope, ScopeOperation } from "../../services/page-scope";
 import { store, Scope } from "../../store/index";
-
-const NAV_DELAY_MS = 600;
+import { bindNotice, registerNotice, showNotice } from "../../services/notice";
 
 Page({
   data: {
+    notice: null as any,
     name: "",
     locationText: "",
     recordText: "",
@@ -57,6 +57,7 @@ Page({
     }
   },
   onShow() {
+    registerNotice(bindNotice(this));
     const guard = this._guard as PageScope;
     guard.show();
     if (!this._id || this._invalidRoute) return;
@@ -135,6 +136,7 @@ Page({
     await this.loadItem();
   },
   onHide() {
+    registerNotice(null);
     if (this._navTimer !== null) {
       clearTimeout(this._navTimer);
       this._navTimer = null;
@@ -274,6 +276,7 @@ Page({
     wx.chooseMedia({
       count: 1,
       mediaType: ["image"],
+      sizeType: ["compressed"],
       sourceType: ["camera", "album"],
       success: (res) => {
         const g = this._guard as PageScope;
@@ -290,11 +293,11 @@ Page({
     const name = this.data.name.trim();
     const location = this.data.locationText.trim();
     if (!name || name.length > 128) {
-      wx.showToast({ title: "名称需为 1～128 个字符", icon: "none" });
+      showNotice("名称需为 1～128 个字符");
       return;
     }
     if (!location || location.length > 255) {
-      wx.showToast({ title: "位置需为 1～255 个字符", icon: "none" });
+      showNotice("位置需为 1～255 个字符");
       return;
     }
     guard.invalidate();
@@ -349,17 +352,13 @@ Page({
       this._write = null;
       this._draft = null;
       this.setData({ saved: true, saving: false, busy: false });
-      wx.showToast({ title: "已保存", icon: "none" });
-      const timer = setTimeout(() => {
-        if (this._navTimer !== timer) return;
-        this._navTimer = null;
+      showNotice("已保存", () => {
         const g = this._guard as PageScope;
         if (!g.isCurrent(op)) return;
         const pages = typeof getCurrentPages === "function" ? getCurrentPages() : [];
         if (pages.length > 1) wx.navigateBack();
         else wx.switchTab({ url: "/pages/items/index" });
-      }, NAV_DELAY_MS);
-      this._navTimer = timer;
+      });
     } catch (err) {
       if (guard.scopeChanged(op)) {
         this.clearForScopeChange();

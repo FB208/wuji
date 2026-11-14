@@ -3,6 +3,7 @@ import { request, ApiError } from "../../services/api";
 import { ensureLogin, refreshMe } from "../../services/auth";
 import { PageScope, ScopeOperation } from "../../services/page-scope";
 import { store, Scope } from "../../store/index";
+import { bindNotice, registerNotice, showNotice, confirmNotice, promptNotice } from "../../services/notice";
 
 interface Member {
   user_id: number;
@@ -14,6 +15,7 @@ interface Member {
 
 Page({
   data: {
+    notice: null as any,
     familyName: "",
     isOwner: false,
     members: [] as Member[],
@@ -32,6 +34,7 @@ Page({
     this._guard = new PageScope();
   },
   onShow() {
+    registerNotice(bindNotice(this));
     const guard = this._guard as PageScope;
     guard.show();
     this.activate();
@@ -69,6 +72,7 @@ Page({
     await this.loadMembers();
   },
   onHide() {
+    registerNotice(null);
     this.clearShare();
     (this._guard as PageScope).hide();
   },
@@ -166,61 +170,51 @@ Page({
     }
   },
 
-  onRename() {
+  async onRename() {
     if (!this.active() || !this.data.isOwner) return;
     const guard = this._guard as PageScope;
     const op = guard.capture();
     const uid = this._sessionScope!.userId;
     const fid = this._sessionScope!.familyId;
-    let fired = false;
-    wx.showModal({
-      title: "修改家庭组名称",
-      editable: true,
-      placeholderText: this.data.familyName,
-      success: async (res) => {
-        const name = (res.content || "").trim();
-        if (!res.confirm || fired || !name || name.length > 64) return;
-        const g = this._guard as PageScope;
-        if (!g.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
-        fired = true;
-        g.invalidate();
-        const wop = g.capture();
-        if (!g.isCurrent(wop)) return;
-        this.setData({ busy: true });
-        this.clearShare();
-        try {
-          await g.run(wop, (hooks) =>
-            request({ path: `/families/${fid}`, method: "POST", data: { name }, isCancelled: hooks.isCancelled, onTask: hooks.onTask })
-          );
-          if (g.scopeChanged(wop)) { this.clearForScopeChange(); return; }
-          if (!g.isCurrent(wop) || !store.user || store.user.id !== uid) return;
-          await refreshMe();
-          if (!g.isFrameCurrent(wop.generation)) return;
-          if (!store.user || store.user.id !== uid) {
-            this.clearForScopeChange();
-            return;
-          }
-          const newScope = store.captureScope();
-          if (newScope.familyId !== fid) {
-            this.clearForScopeChange();
-            return;
-          }
-          const fop = g.capture();
-          this._sessionScope = newScope;
-          if (!g.isCurrent(fop)) return;
-          await this.loadMembers(fop);
-          if (!g.isCurrent(fop)) return;
-          wx.showToast({ title: "已修改", icon: "none" });
-        } catch (err) {
-          if (!g.isFrameCurrent(wop.generation)) return;
-          this.setData({ busy: false });
-          if (g.scopeChanged(wop)) { this.clearForScopeChange(); return; }
-          if (!g.isCurrent(wop)) return;
-          const message = err instanceof ApiError ? err.message : "修改失败，请重试";
-          this.setData({ errorText: message });
-        }
-      },
-    });
+    const name = ((await promptNotice({ title: "修改家庭组名称", placeholderText: this.data.familyName })) || "").trim();
+    const g = this._guard as PageScope;
+    if (!name || name.length > 64 || !g.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
+    g.invalidate();
+    const wop = g.capture();
+    if (!g.isCurrent(wop)) return;
+    this.setData({ busy: true });
+    this.clearShare();
+    try {
+      await g.run(wop, (hooks) =>
+        request({ path: `/families/${fid}`, method: "POST", data: { name }, isCancelled: hooks.isCancelled, onTask: hooks.onTask })
+      );
+      if (g.scopeChanged(wop)) { this.clearForScopeChange(); return; }
+      if (!g.isCurrent(wop) || !store.user || store.user.id !== uid) return;
+      await refreshMe();
+      if (!g.isFrameCurrent(wop.generation)) return;
+      if (!store.user || store.user.id !== uid) {
+        this.clearForScopeChange();
+        return;
+      }
+      const newScope = store.captureScope();
+      if (newScope.familyId !== fid) {
+        this.clearForScopeChange();
+        return;
+      }
+      const fop = g.capture();
+      this._sessionScope = newScope;
+      if (!g.isCurrent(fop)) return;
+      await this.loadMembers(fop);
+      if (!g.isCurrent(fop)) return;
+      showNotice("已修改");
+    } catch (err) {
+      if (!g.isFrameCurrent(wop.generation)) return;
+      this.setData({ busy: false });
+      if (g.scopeChanged(wop)) { this.clearForScopeChange(); return; }
+      if (!g.isCurrent(wop)) return;
+      const message = err instanceof ApiError ? err.message : "修改失败，请重试";
+      this.setData({ errorText: message });
+    }
   },
   async onInvite() {
     if (!this.active() || !this.data.isOwner) return;
@@ -249,7 +243,7 @@ Page({
       ) {
         this._share = { scope: op.scope, path: data.share_path, expiresAt: exp };
         wx.showShareMenu({ menus: ["shareAppMessage"] });
-        wx.showToast({ title: "请点击右上角转发给家人", icon: "none", duration: 2500 });
+        showNotice({ text: "请点击右上角转发给家人", secondaryText: "邀请链接已准备好" });
       } else {
         this.setData({ errorText: "邀请生成失败" });
       }
@@ -278,7 +272,7 @@ Page({
       path: `/${s!.path}`,
     };
   },
-  onRemoveMember(e: WechatMiniprogram.TouchEvent) {
+  async onRemoveMember(e: WechatMiniprogram.TouchEvent) {
     if (!this.active() || !this.data.isOwner) return;
     const id = Number((e.currentTarget.dataset as any).id);
     const member = this.data.members.find((m) => m.user_id === id);
@@ -287,55 +281,47 @@ Page({
     const op = guard.capture();
     const uid = this._sessionScope!.userId;
     const fid = this._sessionScope!.familyId;
-    let fired = false;
-    wx.showModal({
-      title: "移除成员",
-      content: `确定将「${member.nickname || "该成员"}」移出家庭组？`,
-      success: async (res) => {
-        if (!res.confirm || fired) return;
-        const g = this._guard as PageScope;
-        if (!g.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
-        fired = true;
-        g.invalidate();
-        const wop = g.capture();
-        if (!g.isCurrent(wop)) return;
-        this.setData({ busy: true });
-        this.clearShare();
-        try {
-          await g.run(wop, (hooks) =>
-            request({ path: `/families/${fid}/members/${member.user_id}`, method: "DELETE", isCancelled: hooks.isCancelled, onTask: hooks.onTask })
-          );
-          if (g.scopeChanged(wop)) { this.clearForScopeChange(); return; }
-          if (!g.isCurrent(wop) || !store.user || store.user.id !== uid) return;
-          await refreshMe();
-          if (!g.isFrameCurrent(wop.generation)) return;
-          if (!store.user || store.user.id !== uid) {
-            this.clearForScopeChange();
-            return;
-          }
-          const newScope = store.captureScope();
-          if (newScope.familyId !== fid) {
-            this.clearForScopeChange();
-            return;
-          }
-          const fop = g.capture();
-          this._sessionScope = newScope;
-          if (!g.isCurrent(fop)) return;
-          await this.loadMembers(fop);
-          if (!g.isCurrent(fop)) return;
-          wx.showToast({ title: "已移除", icon: "none" });
-        } catch (err) {
-          if (!g.isFrameCurrent(wop.generation)) return;
-          this.setData({ busy: false });
-          if (g.scopeChanged(wop)) { this.clearForScopeChange(); return; }
-          if (!g.isCurrent(wop)) return;
-          const message = err instanceof ApiError ? err.message : "移除失败，请重试";
-          this.setData({ errorText: message });
-        }
-      },
-    });
+    const ok = await confirmNotice({ title: "移除成员", text: `确定将「${member.nickname || "该成员"}」移出家庭组？`, confirmText: "移除" });
+    const g = this._guard as PageScope;
+    if (!ok || !g.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
+    g.invalidate();
+    const wop = g.capture();
+    if (!g.isCurrent(wop)) return;
+    this.setData({ busy: true });
+    this.clearShare();
+    try {
+      await g.run(wop, (hooks) =>
+        request({ path: `/families/${fid}/members/${member.user_id}`, method: "DELETE", isCancelled: hooks.isCancelled, onTask: hooks.onTask })
+      );
+      if (g.scopeChanged(wop)) { this.clearForScopeChange(); return; }
+      if (!g.isCurrent(wop) || !store.user || store.user.id !== uid) return;
+      await refreshMe();
+      if (!g.isFrameCurrent(wop.generation)) return;
+      if (!store.user || store.user.id !== uid) {
+        this.clearForScopeChange();
+        return;
+      }
+      const newScope = store.captureScope();
+      if (newScope.familyId !== fid) {
+        this.clearForScopeChange();
+        return;
+      }
+      const fop = g.capture();
+      this._sessionScope = newScope;
+      if (!g.isCurrent(fop)) return;
+      await this.loadMembers(fop);
+      if (!g.isCurrent(fop)) return;
+      showNotice("已移除");
+    } catch (err) {
+      if (!g.isFrameCurrent(wop.generation)) return;
+      this.setData({ busy: false });
+      if (g.scopeChanged(wop)) { this.clearForScopeChange(); return; }
+      if (!g.isCurrent(wop)) return;
+      const message = err instanceof ApiError ? err.message : "移除失败，请重试";
+      this.setData({ errorText: message });
+    }
   },
-  onTransfer(e: WechatMiniprogram.TouchEvent) {
+  async onTransfer(e: WechatMiniprogram.TouchEvent) {
     if (!this.active() || !this.data.isOwner) return;
     const id = Number((e.currentTarget.dataset as any).id);
     const member = this.data.members.find((m) => m.user_id === id);
@@ -344,176 +330,152 @@ Page({
     const op = guard.capture();
     const uid = this._sessionScope!.userId;
     const fid = this._sessionScope!.familyId;
-    let fired = false;
-    wx.showModal({
-      title: "转让家庭组",
-      content: `将「${this.data.familyName}」转让给「${member.nickname || "该成员"}」？你将成为普通成员。`,
-      success: async (res) => {
-        if (!res.confirm || fired) return;
-        const g = this._guard as PageScope;
-        if (!g.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
-        fired = true;
-        g.invalidate();
-        const wop = g.capture();
-        if (!g.isCurrent(wop)) return;
-        this.setData({ busy: true });
-        this.clearShare();
-        try {
-          await g.run(wop, (hooks) =>
-            request({ path: `/families/${fid}/transfer`, method: "POST", data: { user_id: member.user_id }, isCancelled: hooks.isCancelled, onTask: hooks.onTask })
-          );
-          if (g.scopeChanged(wop)) { this.clearForScopeChange(); return; }
-          if (!g.isCurrent(wop) || !store.user || store.user.id !== uid) return;
-          await refreshMe();
-          if (!g.isFrameCurrent(wop.generation)) return;
-          if (!store.user || store.user.id !== uid) {
-            this.clearForScopeChange();
-            return;
-          }
-          const newScope = store.captureScope();
-          if (newScope.familyId !== fid) {
-            this.clearForScopeChange();
-            return;
-          }
-          const fop = g.capture();
-          this._sessionScope = newScope;
-          if (!g.isCurrent(fop)) return;
-          await this.loadMembers(fop);
-          if (!g.isCurrent(fop)) return;
-          wx.showToast({ title: "已转让", icon: "none" });
-        } catch (err) {
-          if (!g.isFrameCurrent(wop.generation)) return;
-          this.setData({ busy: false });
-          if (g.scopeChanged(wop)) { this.clearForScopeChange(); return; }
-          if (!g.isCurrent(wop)) return;
-          const message = err instanceof ApiError ? err.message : "转让失败，请重试";
-          this.setData({ errorText: message });
-        }
-      },
-    });
+    const ok = await confirmNotice({ title: "转让家庭组", text: `将「${this.data.familyName}」转让给「${member.nickname || "该成员"}」？你将成为普通成员。`, confirmText: "转让" });
+    const g = this._guard as PageScope;
+    if (!ok || !g.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
+    g.invalidate();
+    const wop = g.capture();
+    if (!g.isCurrent(wop)) return;
+    this.setData({ busy: true });
+    this.clearShare();
+    try {
+      await g.run(wop, (hooks) =>
+        request({ path: `/families/${fid}/transfer`, method: "POST", data: { user_id: member.user_id }, isCancelled: hooks.isCancelled, onTask: hooks.onTask })
+      );
+      if (g.scopeChanged(wop)) { this.clearForScopeChange(); return; }
+      if (!g.isCurrent(wop) || !store.user || store.user.id !== uid) return;
+      await refreshMe();
+      if (!g.isFrameCurrent(wop.generation)) return;
+      if (!store.user || store.user.id !== uid) {
+        this.clearForScopeChange();
+        return;
+      }
+      const newScope = store.captureScope();
+      if (newScope.familyId !== fid) {
+        this.clearForScopeChange();
+        return;
+      }
+      const fop = g.capture();
+      this._sessionScope = newScope;
+      if (!g.isCurrent(fop)) return;
+      await this.loadMembers(fop);
+      if (!g.isCurrent(fop)) return;
+      showNotice("已转让");
+    } catch (err) {
+      if (!g.isFrameCurrent(wop.generation)) return;
+      this.setData({ busy: false });
+      if (g.scopeChanged(wop)) { this.clearForScopeChange(); return; }
+      if (!g.isCurrent(wop)) return;
+      const message = err instanceof ApiError ? err.message : "转让失败，请重试";
+      this.setData({ errorText: message });
+    }
   },
-  onDissolve() {
+  async onDissolve() {
     if (!this.active() || !this.data.isOwner) return;
     const guard = this._guard as PageScope;
     const op = guard.capture();
     const uid = this._sessionScope!.userId;
     const fid = this._sessionScope!.familyId;
     const familyName = this.data.familyName;
-    let fired = false;
-    wx.showModal({
-      title: "解散家庭组",
-      editable: true,
-      placeholderText: `请输入「${familyName}」确认`,
-      success: async (res) => {
-        if (!res.confirm || fired || (res.content || "").trim() !== familyName) return;
-        const g = this._guard as PageScope;
-        if (!g.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
-        fired = true;
-        g.invalidate();
-        const wop = g.capture();
-        if (!g.isCurrent(wop)) return;
-        this.setData({ busy: true });
-        this.clearShare();
-        try {
-          await g.run(wop, (hooks) =>
-            request({ path: `/families/${fid}`, method: "DELETE", isCancelled: hooks.isCancelled, onTask: hooks.onTask })
-          );
-          if (g.scopeChanged(wop)) { this.clearForScopeChange(); return; }
-          if (!g.isCurrent(wop) || !store.user || store.user.id !== uid) return;
-          await refreshMe();
-          if (!g.isFrameCurrent(wop.generation)) return;
-          if (!store.user || store.user.id !== uid) {
-            this.clearForScopeChange();
-            return;
-          }
-          if (store.families.some((f) => f.id === fid)) {
-            this.clearForScopeChange();
-            this.setData({ errorText: "解散未确认，请刷新查看" });
-            return;
-          }
-          const fop = g.capture();
-          this._sessionScope = store.captureScope();
-          this.setData({ familyName: "", members: [], isOwner: false, busy: false, ready: false, noFamily: !store.currentFamilyId });
-          if (!g.isCurrent(fop)) return;
-          wx.showToast({ title: "已解散", icon: "none" });
-          const pages = getCurrentPages ? getCurrentPages() : [];
-          if (pages.length > 1) {
-            wx.navigateBack();
-          } else {
-            wx.switchTab({ url: "/pages/profile/index" });
-          }
-        } catch (err) {
-          if (!g.isFrameCurrent(wop.generation)) return;
-          this.setData({ busy: false });
-          if (g.scopeChanged(wop)) { this.clearForScopeChange(); return; }
-          if (!g.isCurrent(wop)) return;
-          const message = err instanceof ApiError ? err.message : "解散失败，请重试";
-          this.setData({ errorText: message });
+    const input = await promptNotice({ title: "解散家庭组", text: "解散后所有成员将无法访问该家庭组。", placeholderText: `请输入「${familyName}」确认`, confirmText: "解散" });
+    const g = this._guard as PageScope;
+    if (input === null || (input || "").trim() !== familyName || !g.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
+    g.invalidate();
+    const wop = g.capture();
+    if (!g.isCurrent(wop)) return;
+    this.setData({ busy: true });
+    this.clearShare();
+    try {
+      await g.run(wop, (hooks) =>
+        request({ path: `/families/${fid}`, method: "DELETE", isCancelled: hooks.isCancelled, onTask: hooks.onTask })
+      );
+      if (g.scopeChanged(wop)) { this.clearForScopeChange(); return; }
+      if (!g.isCurrent(wop) || !store.user || store.user.id !== uid) return;
+      await refreshMe();
+      if (!g.isFrameCurrent(wop.generation)) return;
+      if (!store.user || store.user.id !== uid) {
+        this.clearForScopeChange();
+        return;
+      }
+      if (store.families.some((f) => f.id === fid)) {
+        this.clearForScopeChange();
+        this.setData({ errorText: "解散未确认，请刷新查看" });
+        return;
+      }
+      const fop = g.capture();
+      this._sessionScope = store.captureScope();
+      this.setData({ familyName: "", members: [], isOwner: false, busy: false, ready: false, noFamily: !store.currentFamilyId });
+      if (!g.isCurrent(fop)) return;
+      showNotice("已解散", () => {
+        const pages = getCurrentPages ? getCurrentPages() : [];
+        if (pages.length > 1) {
+          wx.navigateBack();
+        } else {
+          wx.switchTab({ url: "/pages/profile/index" });
         }
-      },
-    });
+      });
+    } catch (err) {
+      if (!g.isFrameCurrent(wop.generation)) return;
+      this.setData({ busy: false });
+      if (g.scopeChanged(wop)) { this.clearForScopeChange(); return; }
+      if (!g.isCurrent(wop)) return;
+      const message = err instanceof ApiError ? err.message : "解散失败，请重试";
+      this.setData({ errorText: message });
+    }
   },
-  onLeave() {
+  async onLeave() {
     if (!this.active()) return;
     if (this.data.isOwner) {
-      wx.showToast({ title: "所有者需先转让或解散家庭组", icon: "none" });
+      showNotice("所有者需先转让或解散家庭组");
       return;
     }
     const guard = this._guard as PageScope;
     const op = guard.capture();
     const uid = this._sessionScope!.userId;
     const fid = this._sessionScope!.familyId;
-    let fired = false;
-    wx.showModal({
-      title: "退出家庭组",
-      content: "退出后将无法查看该家庭组的物品记录。",
-      success: async (res) => {
-        if (!res.confirm || fired) return;
-        const g = this._guard as PageScope;
-        if (!g.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
-        fired = true;
-        g.invalidate();
-        const wop = g.capture();
-        if (!g.isCurrent(wop)) return;
-        this.setData({ busy: true });
-        try {
-          await g.run(wop, (hooks) =>
-            request({ path: `/families/${fid}/members/${uid}`, method: "DELETE", isCancelled: hooks.isCancelled, onTask: hooks.onTask })
-          );
-          if (g.scopeChanged(wop)) { this.clearForScopeChange(); return; }
-          if (!g.isCurrent(wop) || !store.user || store.user.id !== uid) return;
-          await refreshMe();
-          if (!g.isFrameCurrent(wop.generation)) return;
-          if (!store.user || store.user.id !== uid) {
-            this.clearForScopeChange();
-            return;
-          }
-          if (store.families.some((f) => f.id === fid)) {
-            this.clearForScopeChange();
-            this.setData({ errorText: "退出未确认，请刷新查看" });
-            return;
-          }
-          const fop = g.capture();
-          this._sessionScope = store.captureScope();
-          this.clearShare();
-          this.setData({ familyName: "", members: [], isOwner: false, busy: false, ready: false, noFamily: !store.currentFamilyId });
-          if (!g.isCurrent(fop)) return;
-          const pages = getCurrentPages ? getCurrentPages() : [];
-          if (pages.length > 1) {
-            wx.navigateBack();
-          } else {
-            wx.switchTab({ url: "/pages/profile/index" });
-          }
-        } catch (err) {
-          if (!g.isFrameCurrent(wop.generation)) return;
-          this.setData({ busy: false });
-          if (g.scopeChanged(wop)) { this.clearForScopeChange(); return; }
-          if (!g.isCurrent(wop)) return;
-          const message = err instanceof ApiError ? err.message : "退出失败，请重试";
-          this.setData({ errorText: message });
-        }
-      },
-    });
+    const ok = await confirmNotice({ title: "退出家庭组", text: "退出后将无法查看该家庭组的物品记录。", confirmText: "退出" });
+    const g = this._guard as PageScope;
+    if (!ok || !g.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
+    g.invalidate();
+    const wop = g.capture();
+    if (!g.isCurrent(wop)) return;
+    this.setData({ busy: true });
+    try {
+      await g.run(wop, (hooks) =>
+        request({ path: `/families/${fid}/members/${uid}`, method: "DELETE", isCancelled: hooks.isCancelled, onTask: hooks.onTask })
+      );
+      if (g.scopeChanged(wop)) { this.clearForScopeChange(); return; }
+      if (!g.isCurrent(wop) || !store.user || store.user.id !== uid) return;
+      await refreshMe();
+      if (!g.isFrameCurrent(wop.generation)) return;
+      if (!store.user || store.user.id !== uid) {
+        this.clearForScopeChange();
+        return;
+      }
+      if (store.families.some((f) => f.id === fid)) {
+        this.clearForScopeChange();
+        this.setData({ errorText: "退出未确认，请刷新查看" });
+        return;
+      }
+      const fop = g.capture();
+      this._sessionScope = store.captureScope();
+      this.clearShare();
+      this.setData({ familyName: "", members: [], isOwner: false, busy: false, ready: false, noFamily: !store.currentFamilyId });
+      if (!g.isCurrent(fop)) return;
+      const pages = getCurrentPages ? getCurrentPages() : [];
+      if (pages.length > 1) {
+        wx.navigateBack();
+      } else {
+        wx.switchTab({ url: "/pages/profile/index" });
+      }
+    } catch (err) {
+      if (!g.isFrameCurrent(wop.generation)) return;
+      this.setData({ busy: false });
+      if (g.scopeChanged(wop)) { this.clearForScopeChange(); return; }
+      if (!g.isCurrent(wop)) return;
+      const message = err instanceof ApiError ? err.message : "退出失败，请重试";
+      this.setData({ errorText: message });
+    }
   },
   onRetryTap() {
     const guard = this._guard as PageScope;

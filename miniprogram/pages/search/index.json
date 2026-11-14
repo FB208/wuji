@@ -2,6 +2,7 @@
   "navigationBarTitleText": "找东西",
   "usingComponents": {
     "hold-to-talk": "/components/hold-to-talk/index",
-    "item-card": "/components/item-card/index"
+    "item-card": "/components/item-card/index",
+    "notice-panel": "/components/notice-panel/index"
   }
 }

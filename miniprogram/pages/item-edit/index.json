@@ -1,6 +1,7 @@
 {
   "navigationBarTitleText": "修改物品",
   "usingComponents": {
-    "brutal-button": "/components/brutal-button/index"
+    "brutal-button": "/components/brutal-button/index",
+    "notice-panel": "/components/notice-panel/index"
   }
 }

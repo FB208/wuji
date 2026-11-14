@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.core.errors import AppError, audio_too_long, audio_too_short, ok, search_failed
+from app.core.logging import get_logger
 from app.core.security import rate_limiter
 from app.db.session import get_db
 from app.models.tables import User
@@ -19,6 +20,7 @@ from app.services import record_service, search_service
 from app.services.family_service import require_membership
 
 router = APIRouter()
+logger = get_logger(__name__)
 
 # 录音下限约 1 秒（文档 1.4）：以最低码率估算的字节数下限
 MIN_AUDIO_BYTES = 1000
@@ -43,6 +45,7 @@ async def upload_image(
 ):
     rate_limiter.check(f"upload:{user.id}", limit=30, window_seconds=60)
     content = await image.read()
+    logger.info("收到图片 user=%d bytes=%d name=%s", user.id, len(content), image.filename)
     data = await record_service.upload_image(db, user.id, family_id, image.filename or "", content)
     return ok(request, data)
 
@@ -60,6 +63,7 @@ async def transcribe(
         raise audio_too_short()
     if len(content) > MAX_AUDIO_BYTES:
         raise audio_too_long()
+    logger.info("收到录音 user=%d bytes=%d name=%s", user.id, len(content), audio.filename)
     transcript = await speech_provider.transcribe(content, _audio_ext(audio.filename))
     return ok(request, {"transcript": transcript})
 
@@ -96,6 +100,7 @@ async def search_audio(
         raise audio_too_short()
     if len(content) > MAX_AUDIO_BYTES:
         raise audio_too_long()
+    logger.info("收到查找录音 user=%d bytes=%d name=%s", user.id, len(content), audio.filename)
     context = None
     if context_json:
         try:

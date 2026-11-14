@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { loadTsModule, mockWx, makePage, MP_DIR } from "./helpers/loader.mjs";
+import { loadTsModule, mockWx, makePage, MP_DIR, noticeMock } from "./helpers/loader.mjs";
 
 const K = (p) => MP_DIR.replaceAll(path.sep, "/") + "/" + p;
 const clone = (v) => v === undefined ? v : JSON.parse(JSON.stringify(v));
@@ -61,6 +61,7 @@ function env(pageName = "profile", options = {}) {
     globals: { wx, Page: (d) => { definition = d; }, getCurrentPages: () => options.singlePage ? [] : [{}, {}] },
     mocks: {
       [K("services/api")]: api,
+      [K("services/notice")]: noticeMock(wx),
       [K("services/page-scope")]: gm,
       [K("store/index")]: sm,
       [K("utils/format")]: { formatTime: (v) => v },
@@ -81,9 +82,10 @@ function env(pageName = "profile", options = {}) {
 }
 async function boot(e) { e.page.onShow(); await flush(); }
 async function confirm(e, name = " 新家庭 ") {
-  e.page.onCreateFamily();
+  const p = e.page.onCreateFamily();
   assert.equal(e.calls.modal.length, 1);
-  return e.calls.modal[0].success({ confirm: true, content: name });
+  e.calls.modal[0].success({ confirm: true, content: name });
+  return p;
 }
 
 for (const name of ["home", "profile"]) {
@@ -135,9 +137,9 @@ for (const name of ["home", "profile"]) {
     } else {
       assert.equal(e.page.data.itemCount, 0);
       e.page.onHowToJoin();
-      assert.match(e.calls.modal[0].content, /邀请卡片/);
+      assert.match(e.calls.toast[e.calls.toast.length - 1], /邀请卡片/);
       e.page.onCreateFamily();
-      assert.equal(e.calls.modal[1].editable, true);
+      assert.equal(e.calls.modal[0].editable, true);
     }
   });
   for (const uid of [1, 2]) for (const outcome of ["resolve", "reject"]) {
@@ -179,9 +181,9 @@ test("profile: 创建后Me原子选中+Count完成才解busy，合法新scope能
   let gets = 0;
   const e = env("profile", { get: () => ++gets === 1 ? Promise.resolve({ total: 23 }) : count.p });
   await boot(e);
-  e.page.onCreateFamily();
+  const done = e.page.onCreateFamily();
   const callback = e.calls.modal[0].success;
-  const done = callback({ confirm: true, content: " 新家 " });
+  callback({ confirm: true, content: " 新家 " });
   callback({ confirm: true, content: " 新家 " });
   await flush();
   assert.deepEqual(e.calls.post, [{ method: "POST", data: { name: "新家" } }]);

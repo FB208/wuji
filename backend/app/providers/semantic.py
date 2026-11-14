@@ -16,6 +16,7 @@ from app.core.config import get_settings
 from app.core.errors import (
     AppError,
     record_parse_failed,
+    record_unclear,
     search_failed,
     semantic_budget_exceeded,
 )
@@ -275,6 +276,7 @@ class SemanticProvider:
         if self._payload_chars(final_prompt, final_payload) > settings.semantic_max_input_chars:
             raise semantic_budget_exceeded()
         raw = await self._chat(final_prompt, final_payload)
+        logger.info("语义判断响应 raw=%s", raw)
         return raw, {i["id"] for i in final_items}
 
     async def judge_record(
@@ -312,35 +314,50 @@ class SemanticProvider:
 
         op = result.operation
         candidates = _dedupe(result.candidate_item_ids)
+        logger.info(
+            "入库判断 transcript=%r operation=%s name=%r location=%r",
+            transcript, op, result.name, result.location_text,
+        )
+        # 描述信息不足（如与收纳无关的内容）是 LLM 的合法响应，单独成码区别于契约违规。
+        # 按原始 operation 判定：create 要求名称+位置，move 只要求新位置（名称可为空保留原名）
+        if not result.location_text.strip() or (op == "create" and not result.name.strip()):
+            logger.warning("描述信息不足 transcript=%r raw=%s", transcript, raw)
+            raise record_unclear()
+        out: dict[str, Any] | None = None
         if op == "create":
             if result.target_item_id is not None or candidates:
+                logger.warning("入库判断被拒：create 却携带 target/candidates raw=%s", raw)
                 raise record_parse_failed()
-            return {
+            out = {
                 "operation": "create",
                 "target_item_id": None,
                 "name": result.name.strip(),
                 "location_text": result.location_text.strip(),
                 "candidate_item_ids": [],
             }
-        if op == "move":
+        elif op == "move":
             if result.target_item_id is None or candidates != [result.target_item_id]:
+                logger.warning("入库判断被拒：move 目标与候选不一致 raw=%s", raw)
                 raise record_parse_failed()
             if result.target_item_id not in allowed:
-                return {
+                out = {
                     "operation": "create",
                     "target_item_id": None,
                     "name": result.name.strip(),
                     "location_text": result.location_text.strip(),
                     "candidate_item_ids": [],
                 }
-            return {
-                "operation": "move",
-                "target_item_id": result.target_item_id,
-                "name": result.name.strip(),
-                "location_text": result.location_text.strip(),
-                "candidate_item_ids": [result.target_item_id],
-            }
-        raise record_parse_failed()
+            else:
+                out = {
+                    "operation": "move",
+                    "target_item_id": result.target_item_id,
+                    "name": result.name.strip(),
+                    "location_text": result.location_text.strip(),
+                    "candidate_item_ids": [result.target_item_id],
+                }
+        if out is None:
+            raise record_parse_failed()
+        return out
 
     async def search_items(
         self,

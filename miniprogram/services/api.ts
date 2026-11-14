@@ -1,6 +1,7 @@
 /** HTTP 封装：统一响应结构、令牌、错误码处理（文档 13.1 / 13.6）。 */
+import { showNotice } from "./notice";
 
-export const API_BASE_URL = "https://api.example.com/api/v1"; // 部署后替换为正式域名
+export const API_BASE_URL = "http://192.168.13.196:8000/api/v1"; // 部署后替换为正式域名
 
 const TOKEN_KEY = "wuji_access_token";
 
@@ -288,5 +289,5 @@ export function showApiError(err: unknown, fallback = "网络异常，请重试�
     wx.reLaunch({ url: "/pages/launch/index" });
     return;
   }
-  wx.showToast({ title: message, icon: "none" });
+  showNotice(message);
 }

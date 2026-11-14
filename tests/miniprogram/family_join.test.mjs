@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { loadTsModule, mockWx, makePage, MP_DIR } from "./helpers/loader.mjs";
+import { loadTsModule, mockWx, makePage, MP_DIR, noticeMock } from "./helpers/loader.mjs";
 const K = (s) => MP_DIR.replaceAll(path.sep, "/") + "/" + s;
 const PAGE = path.join(MP_DIR, "pages/family-join/index.ts");
 function deferred() { let r, rej; const p = new Promise((res, j) => { r = res; rej = j; }); return { p, resolve: r, reject: rej }; }
@@ -64,6 +64,7 @@ function env(overrides = {}, query = { invite_token: "tok1" }) {
     mocks: {
       [K("services/api")]: apiMod, [K("services/auth")]: authMod,
       [K("services/page-scope")]: scopeMod, [K("store/index")]: storeMod,
+      [K("services/notice")]: noticeMock(wxBase),
     },
   });
   const page = makePage(def);
@@ -130,9 +131,6 @@ test("c join成功→Me applyMe新增20+preferred20→toast+599/600 nav", async 
   assert.equal(store.currentFamilyId, 20);
   assert.equal(calls.toasts.filter((t) => t === "加入成功").length, 1);
   assert.equal(page.data.joined, true);
-  clock.advance(599);
-  assert.equal(calls.switchTab.length, 0);
-  clock.advance(1);
   assert.equal(calls.switchTab.length, 1);
 });
 test("d POST pending换UID→resolve 0Me/0toast", async () => {
@@ -191,15 +189,16 @@ test("f2 hide during POST 0toast/nav", async () => {
   assert.equal(calls.toasts.length, 0);
   assert.equal(calls.switchTab.length, 0);
 });
-test("g timer id0 hide size0 advance无nav", async () => {
-  const { page, calls, clock } = env();
+test("g hide期间join完成不再nav", async () => {
+  const d = deferred();
+  const { page, calls } = env({ post: () => d.p });
   await boot({ page, calls });
   page.onJoin();
   await flush();
-  assert.equal(clock.timers.has(0), true);
+  assert.equal(calls.post.length, 1);
   page.onHide();
-  assert.equal(clock.timers.size, 0);
-  clock.advance(1000);
+  d.resolve({ family_id: 20 });
+  await flush();
   assert.equal(calls.switchTab.length, 0);
 });
 test("h unknown join不自动重提 retry同token", async () => {

@@ -5,6 +5,34 @@
   flex-direction: column;
 }
 
+/* 录音状态顶栏：按下后手指遮住按钮文字，状态显示在屏幕上方 */
+.mic-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  padding: 20rpx 32rpx;
+  padding-top: calc(20rpx + env(safe-area-inset-top));
+  text-align: center;
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #111111;
+  border-bottom: 4rpx solid #111111;
+}
+
+.mic-banner.starting {
+  background: #ffb84d;
+}
+
+.mic-banner.ready {
+  background: #77dfa0;
+}
+
+.mic-banner.cancel {
+  background: #ff9db5;
+}
+
 /* 4:3 照片容器（文档 8.2） */
 .photo-area {
   position: relative;
@@ -83,5 +111,20 @@
 }
 
 .album-entry {
-  padding: 8rpx;
+  margin: 16rpx auto 0;
+  width: 280rpx;
+  text-align: center;
+  padding: 14rpx 0;
+  background: #ffffff;
+  border: 4rpx solid #111111;
+  border-radius: 16rpx;
+  box-shadow: 4rpx 4rpx 0 #111111;
+  font-size: 26rpx;
+  font-weight: 700;
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+
+.album-entry:active {
+  transform: translate(4rpx, 4rpx);
+  box-shadow: 2rpx 2rpx 0 #111111;
 }

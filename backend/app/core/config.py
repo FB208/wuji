@@ -42,11 +42,13 @@ class Settings(BaseSettings):
     rustfs_bucket: str = "wuji-items"
     rustfs_public_base_url: str = "http://localhost:9000/wuji-items"
 
-    # 火山引擎大模型录音文件识别（极速版）
-    volc_speech_endpoint: str = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash"
-    volc_speech_app_id: str = ""
-    volc_speech_access_token: str = ""
-    volc_speech_resource_id: str = "volc.bigasr.auc_turbo"
+    # 火山引擎大模型录音文件识别（2.0 标准版，submit + query 轮询）
+    volc_speech_base_url: str = "https://openspeech.bytedance.com"
+    # 火山方舟控制台「API Key 管理」创建的 Key（X-Api-Key 鉴权）
+    volc_speech_api_key: str = ""
+    volc_speech_resource_id: str = "volc.seedasr.auc"
+    volc_speech_poll_interval_seconds: float = 0.5
+    volc_speech_max_wait_seconds: float = 60.0
 
     # OpenAI-compatible 语义服务
     semantic_base_url: str = "https://provider.example.com/v1"
@@ -89,7 +91,7 @@ class Settings(BaseSettings):
         for name in (
             "wechat_app_id", "wechat_app_secret",
             "rustfs_access_key", "rustfs_secret_key",
-            "volc_speech_app_id", "volc_speech_access_token",
+            "volc_speech_api_key",
             "semantic_api_key", "semantic_model",
         ):
             if not getattr(self, name):

@@ -36,19 +36,26 @@ class RustFSProvider:
         month = datetime.now(timezone.utc).strftime("%Y%m")
         return f"items/{family_id}/{month}/{uuid.uuid4().hex}.{ext}"
 
+    def build_tmp_audio_key(self, ext: str) -> str:
+        """语音识别临时音频对象：speech-tmp/{uuid}.{ext}，转写完成后删除。"""
+        return f"speech-tmp/{uuid.uuid4().hex}.{ext}"
+
     def public_url(self, object_key: str) -> str:
         return f"{self._settings.rustfs_public_base_url.rstrip('/')}/{object_key}"
 
-    async def upload_image(self, object_key: str, content: bytes, ext: str) -> str:
+    async def upload_object(self, object_key: str, content: bytes, content_type: str) -> None:
         def _put() -> None:
             self._client.put_object(
                 Bucket=self._settings.rustfs_bucket,
                 Key=object_key,
                 Body=content,
-                ContentType=_CONTENT_TYPES.get(ext, "application/octet-stream"),
+                ContentType=content_type,
             )
 
         await asyncio.to_thread(_put)
+
+    async def upload_image(self, object_key: str, content: bytes, ext: str) -> str:
+        await self.upload_object(object_key, content, _CONTENT_TYPES.get(ext, "application/octet-stream"))
         return self.public_url(object_key)
 
     async def delete_object(self, object_key: str) -> None:

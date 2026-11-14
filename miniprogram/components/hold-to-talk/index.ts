@@ -6,10 +6,12 @@ const CANCEL_DISTANCE = 80;
 Component({
   properties: {
     idleText: { type: String, value: "按住说话" },
+    compact: { type: Boolean, value: false },
     disabled: { type: Boolean, value: false },
   },
   data: {
     recording: false,
+    starting: false,
     willCancel: false,
     seconds: 0,
   },
@@ -48,11 +50,12 @@ Component({
     },
     interrupt() {
       (this as any)._pressed = false;
+      (this as any)._started = false;
       const pending = (this as any)._pending as Promise<RecordResult | null> | undefined;
       this.bump();
       this.clearTimer();
       if (this.data.recording) {
-        this.setData({ recording: false, willCancel: false, seconds: 0 });
+        this.setData({ recording: false, starting: false, willCancel: false, seconds: 0 });
       }
       if (pending) {
         (this as any)._pending = null;
@@ -63,23 +66,31 @@ Component({
       if (this.data.disabled || this.data.recording || (this as any)._pending) return;
       const gen = this.bump();
       (this as any)._pressed = true;
+      (this as any)._started = false;
+      (this as any)._startY = e.touches[0].clientY;
+      // 按下即反馈：权限检查和录音机初始化在后台进行
+      this.setData({ recording: true, starting: true, willCancel: false, seconds: 0 });
+      this.triggerEvent("recordstart");
       const granted = await recorder.requestPermission();
       if (!this.alive(gen)) return;
       if (!(this as any)._pressed) {
+        this.setData({ recording: false, starting: false, willCancel: false, seconds: 0 });
+        this.triggerEvent("recordcancel");
         return;
       }
       if (!granted) {
+        this.setData({ recording: false, starting: false, willCancel: false, seconds: 0 });
         this.triggerEvent("permissiondenied");
         return;
       }
-      (this as any)._startY = e.touches[0].clientY;
       const promise = recorder.start(() => {
         if (!this.alive(gen) || !(this as any)._pressed) {
           recorder.stop(true, promise).catch(() => {});
           return;
         }
-        this.setData({ recording: true, willCancel: false, seconds: 0 });
-        this.triggerEvent("recordstart");
+        (this as any)._started = true;
+        this.setData({ starting: false });
+        this.triggerEvent("recordready");
         this.clearTimer();
         (this as any)._timer = setInterval(() => {
           this.setData({ seconds: this.data.seconds + 1 });
@@ -104,7 +115,7 @@ Component({
         .finally(() => {
           if ((this as any)._pending === promise) (this as any)._pending = null;
           if ((this as any)._gen === gen) {
-            this.setData({ recording: false, willCancel: false });
+            this.setData({ recording: false, starting: false, willCancel: false });
           }
         });
     },
@@ -114,15 +125,17 @@ Component({
       const willCancel = startY - e.touches[0].clientY > CANCEL_DISTANCE;
       if (willCancel !== this.data.willCancel) {
         this.setData({ willCancel });
+        this.triggerEvent("recordmove", { willCancel });
       }
     },
     onTouchEnd() {
       (this as any)._pressed = false;
       const pending = (this as any)._pending as Promise<RecordResult | null> | undefined;
-      const cancel = this.data.willCancel || !this.data.recording;
+      // 录音机尚未就绪时松开视为取消；onStart 回调会因 !_pressed 自动取消
+      const cancel = this.data.willCancel || !(this as any)._started;
       this.clearTimer();
-      this.setData({ recording: false, willCancel: false, seconds: 0 });
-      if (pending) {
+      this.setData({ recording: false, starting: false, willCancel: false, seconds: 0 });
+      if (pending && (this as any)._started) {
         recorder.stop(cancel, pending).catch(() => {});
       }
     },
@@ -130,8 +143,8 @@ Component({
       (this as any)._pressed = false;
       const pending = (this as any)._pending as Promise<RecordResult | null> | undefined;
       this.clearTimer();
-      this.setData({ recording: false, willCancel: false, seconds: 0 });
-      if (pending) {
+      this.setData({ recording: false, starting: false, willCancel: false, seconds: 0 });
+      if (pending && (this as any)._started) {
         recorder.stop(true, pending).catch(() => {});
       }
     },

@@ -1,3 +1,25 @@
+/* 组件内自带 brutal 样式副本，不依赖全局类（隔离模式下全局样式不生效） */
+.brutal-card {
+  background: #ffffff;
+  border: 4rpx solid #111111;
+  border-radius: 20rpx;
+  box-shadow: 8rpx 8rpx 0 #111111;
+}
+
+.brutal-pressable {
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+
+.brutal-pressable:active {
+  transform: translate(6rpx, 6rpx);
+  box-shadow: 2rpx 2rpx 0 #111111;
+}
+
+.text-hint {
+  font-size: 26rpx;
+  color: #555555;
+}
+
 .card {
   display: flex;
   padding: 20rpx;

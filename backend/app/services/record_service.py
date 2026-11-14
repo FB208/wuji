@@ -127,10 +127,12 @@ def _validate_name_location(name: Any, location_text: Any, *, name_required: boo
     if name is not None and not isinstance(name, str):
         raise record_parse_failed("请重新说清楚物品和位置")
     if name_required and not name:
+        logger.warning("入库校验拒绝：名称为空 name=%r location=%r", name, location_text)
         raise record_parse_failed()
     if isinstance(name, str) and len(name) > _MAX_NAME_LEN:
         raise record_parse_failed("名称或位置过长，请重新描述")
     if not isinstance(location_text, str) or not location_text:
+        logger.warning("入库校验拒绝：位置为空 name=%r location=%r", name, location_text)
         raise record_parse_failed("请重新说清楚物品和位置")
     if len(location_text) > _MAX_LOCATION_LEN:
         raise record_parse_failed("名称或位置过长，请重新描述")
@@ -175,6 +177,7 @@ async def record_item(
     idem_key: str | None,
 ) -> dict:
     """入库主流程：语义判断 create/move，事务写库，幂等返回。"""
+    logger.info("入库开始 user=%d family=%d transcript=%r", user_id, family_id, transcript)
     key = idempotency_service.validate_idem_key(idem_key)
     req_hash = idempotency_service.request_hash(
         "record",
@@ -340,6 +343,10 @@ async def _finalize(
 
         result = {"operation": operation, "item": _item_out(item)}
         idempotency_service.complete(record, result)
+        logger.info(
+            "入库完成 user=%d family=%d operation=%s item_id=%d",
+            user_id, family_id, operation, item.id,
+        )
         return result
 
 

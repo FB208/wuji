@@ -47,6 +47,39 @@ export function loadTsModule(absPath, { mocks = {}, globals = {} } = {}) {
   return module.exports;
 }
 
+/** services/notice 的测试替身：行为等价于未挂载页面时的原生回退（wx.showToast/showModal）。 */
+export function noticeMock(wx) {
+  const title = (m) => (typeof m === "string" ? m : (m && m.text) || "");
+  return {
+    bindNotice: () => () => {},
+    registerNotice: () => {},
+    showNotice: (m, cb) => {
+      wx.showToast({ title: title(m), icon: "none" });
+      if (cb) cb();
+    },
+    confirmNotice: (m) =>
+      new Promise((resolve) =>
+        wx.showModal({
+          title: (m && m.title) || "提示",
+          content: title(m),
+          confirmText: m && m.confirmText,
+          success: (r) => resolve(!!(r && r.confirm)),
+          fail: () => resolve(false),
+        })
+      ),
+    promptNotice: (m) =>
+      new Promise((resolve) =>
+        wx.showModal({
+          title: (m && m.title) || "提示",
+          editable: true,
+          placeholderText: m && m.placeholderText,
+          success: (r) => resolve(r && r.confirm ? r.content || "" : null),
+          fail: () => resolve(null),
+        })
+      ),
+  };
+}
+
 export function makePage(config) {
   const page = Object.create(null);
   Object.assign(page, config);

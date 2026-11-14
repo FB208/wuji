@@ -1,5 +1,6 @@
 """唔叽 · 家庭收纳工具 后端入口。"""
 import asyncio
+import time
 import uuid
 from contextlib import asynccontextmanager
 
@@ -40,8 +41,14 @@ app.add_exception_handler(Exception, unhandled_error_handler)
 @app.middleware("http")
 async def request_id_middleware(request: Request, call_next):
     request.state.request_id = f"req_{uuid.uuid4().hex}"
+    started = time.monotonic()
     response = await call_next(request)
     response.headers["X-Request-Id"] = request.state.request_id
+    elapsed_ms = (time.monotonic() - started) * 1000
+    logger.info(
+        "%s %s -> %d %.0fms",
+        request.method, request.url.path, response.status_code, elapsed_ms,
+    )
     return response
 
 

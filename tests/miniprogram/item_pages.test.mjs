@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import fs from "node:fs";
-import { loadTsModule, mockWx, makePage, MP_DIR } from "./helpers/loader.mjs";
+import { loadTsModule, mockWx, makePage, MP_DIR, noticeMock } from "./helpers/loader.mjs";
 const K = (s) => MP_DIR.replaceAll(path.sep, "/") + "/" + s;
 const DT = path.join(MP_DIR, "pages/item-detail/index.ts");
 const ED = path.join(MP_DIR, "pages/item-edit/index.ts");
@@ -65,6 +65,7 @@ function env(overrides = {}, query = { id: "5" }, pagePath = DT) {
       [K("services/page-scope")]: scopeMod, [K("store/index")]: storeMod,
       [K("utils/format")]: { formatTime: (t) => "t" + t },
       [K("services/upload")]: uploadMod,
+      [K("services/notice")]: noticeMock(wxBase),
     },
   });
   const page = makePage(def);
@@ -225,15 +226,12 @@ test("saved/deleted终态重复0请求", async () => {
   await flush();
   assert.equal(e.calls.del.length, 1);
 });
-test("600ms timer边界599+1", async () => {
+test("删除确认后立即返回", async () => {
   const e = env({}, { id: "5" }, DT);
   await readyDetail(e);
-  e.page.onDelete();
-  await e.calls.modals[0].success({ confirm: true });
-  await flush();
-  e.clock.advance(599);
-  assert.equal(e.calls.backs.length, 0);
-  e.clock.advance(1);
+  const p = e.page.onDelete();
+  e.calls.modals[0].success({ confirm: true });
+  await p;
   assert.equal(e.calls.backs.length, 1);
 });
 
@@ -463,8 +461,9 @@ test("detail: DELETE pending hide零写，show GET恢复不残留deleting", asyn
   const d = deferred();
   const e = env({ del: () => d.p });
   await readyDetail(e);
-  e.page.onDelete();
-  const pending = e.calls.modals[0].success({ confirm: true });
+  const pending = e.page.onDelete();
+  e.calls.modals[0].success({ confirm: true });
+  await flush();
   assert.equal(e.calls.del.length, 1);
   e.page.onHide();
   const count = e.page._setDataCalls.length;
@@ -503,13 +502,17 @@ test("detail: 旧图error不会污染新图，timer0 hide移除", async () => {
   assert.equal(e.page.data.imageFailed, false);
   e.page.onImageError({ currentTarget: { dataset: { imageUrl: "u" } } });
   assert.equal(e.page.data.imageFailed, true);
-  e.page.onDelete();
-  await e.calls.modals[0].success({ confirm: true });
-  assert.equal(e.clock.timers.has(0), true);
-  e.page.onHide();
-  assert.equal(e.clock.timers.size, 0);
-  e.clock.advance(1000);
-  assert.deepEqual(e.calls.backs, []);
+  const d = deferred();
+  const e2 = env({ del: () => d.p }, { id: "5" }, DT);
+  await readyDetail(e2);
+  const p = e2.page.onDelete();
+  e2.calls.modals[0].success({ confirm: true });
+  await flush();
+  assert.equal(e2.calls.del.length, 1);
+  e2.page.onHide();
+  d.resolve({});
+  await p;
+  assert.deepEqual(e2.calls.backs, []);
 });
 
 test("templates: auth/form/needsRefresh具有真实边界和组件注册", () => {

@@ -30,4 +30,17 @@
   <brutal-button wx:if="{{needsRefresh && !busy}}" text="刷新最新记录" color="blue" disabled="{{deleting}}" bind:tap="onRetry" />
   <brutal-button wx:elif="{{errorText && !busy && !blocked && !noFamily && !deleted}}" text="重试" color="blue" disabled="{{deleting}}" bind:tap="onRetry" />
   <brutal-button text="返回物品列表" color="white" bind:tap="goItems" />
+
+  <notice-panel
+    visible="{{notice && notice.visible}}"
+    title="{{notice.title}}"
+    text="{{notice.text}}"
+    secondary-text="{{notice.secondaryText}}"
+    confirm-text="{{notice.confirmText}}"
+    cancel-text="{{notice.cancelText}}"
+    editable="{{notice.editable}}"
+    placeholder-text="{{notice.placeholderText}}"
+    bind:confirm="onNoticeConfirm"
+    bind:cancel="onNoticeCancel"
+  />
 </view>

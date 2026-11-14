@@ -31,7 +31,7 @@ name 和 location_text 必须来自本次 transcript 的明确描述，不补充
 当本次描述指向唯一已有物品的新位置时，返回 "move"；target_item_id 必须来自本次 existing_items，candidate_item_ids 为仅包含该 id 的数组。
 没有对应已有物品、用户明确说是另一件新物品，或不能确定指向任何已有同一物品时，返回 "create"；target_item_id 为 null，candidate_item_ids 为空数组。
 若有两件或以上已有物品同样符合且缺少区分依据，按无法确定为同一物品处理，返回 "create"；target_item_id 为 null，candidate_item_ids 为空数组，不任意覆盖其中一件。
-名称或位置无法提取时，相应字段返回空字符串，不编造内容。move 的名称可以为空以保留原名称，新位置不能为空。
+名称或位置无法提取（包括描述与收纳无关、缺少物品或位置信息、语意不明）时，相应字段返回空字符串，不编造内容。move 的名称可以为空以保留原名称，新位置不能为空。
 name 最多 128 个字符，location_text 最多 255 个字符；无法在不损失用户明确含义的情况下满足长度时，返回相应空字符串，不静默截断。
 不得返回位置解释、置信度、建议、技术术语或额外字段。
 输出示例：{"operation":"move","target_item_id":21,"name":"电钻","location_text":"阳台工具柜最下面","candidate_item_ids":[21]}。"""
