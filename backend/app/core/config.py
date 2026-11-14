@@ -88,6 +88,8 @@ class Settings(BaseSettings):
             missing.append("APP_SECRET")
         if not self.jwt_secret or self.jwt_secret == "change-me-jwt-secret":
             missing.append("JWT_SECRET")
+        if self.database_url == "mysql+asyncmy://user:password@localhost:3306/wuji?charset=utf8mb4":
+            missing.append("DATABASE_URL")
         for name in (
             "wechat_app_id", "wechat_app_secret",
             "rustfs_access_key", "rustfs_secret_key",

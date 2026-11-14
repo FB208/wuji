@@ -149,6 +149,10 @@ jobs:
             printf '%s' "$REGISTRY_PASSWORD" | docker login "$REGISTRY_HOST" --username "$REGISTRY_USERNAME" --password-stdin
             docker compose --env-file .env -f compose.yaml pull wuji
 
+            # 用与容器相同的 env 注入路径自检 .env；缺项直接报变量名，而不是在迁移时才暴露。
+            docker compose --env-file .env -f compose.yaml run --rm --no-deps wuji \
+              python -c "import os,sys; req=['APP_ENV','DATABASE_URL','APP_SECRET','JWT_SECRET','WECHAT_APP_ID','WECHAT_APP_SECRET','RUSTFS_ACCESS_KEY','RUSTFS_SECRET_KEY','VOLC_SPEECH_API_KEY','SEMANTIC_API_KEY','SEMANTIC_MODEL']; miss=[k for k in req if not os.environ.get(k)]; sys.exit(('missing env vars in .env: '+', '.join(miss)) if miss else 0)"
+
             # 先执行数据库迁移再启动新版本；应用启动时会校验迁移版本一致。
             docker compose --env-file .env -f compose.yaml run --rm --no-deps wuji \
               python -m alembic upgrade head
