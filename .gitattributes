@@ -1,0 +1,4 @@
+# workflow 内嵌远端 bash 脚本，必须保持 LF；PS1 允许 CRLF
+*.yml text eol=lf
+*.yaml text eol=lf
+*.sh text eol=lf

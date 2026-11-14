@@ -1,0 +1,178 @@
+name: Deploy wuji backend
+
+on:
+  push:
+    tags:
+      - 'wuji-v*.*.*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-wuji-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy production
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v5
+
+      - name: Prepare release and deploy credentials
+        id: release
+        shell: pwsh
+        env:
+          REGISTRY: ${{ secrets.REGISTRY }}
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+          DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_REF_NAME -cnotmatch '^wuji-v[0-9]+\.[0-9]+\.[0-9]+$') {
+              throw 'Release tag must match wuji-v1.0.0.'
+          }
+          $required = @(
+              'REGISTRY', 'REGISTRY_USERNAME', 'REGISTRY_PASSWORD',
+              'SSH_HOST', 'SSH_PORT', 'SSH_USER', 'SSH_PASSWORD', 'DEPLOY_DIR'
+          )
+          foreach ($key in $required) {
+              if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($key))) {
+                  throw "Missing GitHub Actions secret: $key"
+              }
+          }
+          # 两项 OAuth 配置必须同时填写；均为空时直接通过 SSH 部署。
+          $hasTailscaleClientId = -not [string]::IsNullOrWhiteSpace($env:TS_OAUTH_CLIENT_ID)
+          $hasTailscaleSecret = -not [string]::IsNullOrWhiteSpace($env:TS_OAUTH_SECRET)
+          if ($hasTailscaleClientId -ne $hasTailscaleSecret) {
+              throw 'TS_OAUTH_CLIENT_ID and TS_OAUTH_SECRET must both be set or both be empty.'
+          }
+          "tailscale_enabled=$($hasTailscaleClientId.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+          if ($env:REGISTRY -cnotmatch '^[a-z0-9][a-z0-9.:-]*(/[a-z0-9]+(?:[._-][a-z0-9]+)*)*$') {
+              throw 'REGISTRY must be a registry host with an optional namespace, without a URL scheme or trailing slash.'
+          }
+          if (-not $env:DEPLOY_DIR.StartsWith('/') -or $env:DEPLOY_DIR -eq '/') {
+              throw 'DEPLOY_DIR must be a dedicated absolute directory on the Linux server.'
+          }
+          $sshPort = 0
+          if (-not [int]::TryParse($env:SSH_PORT, [ref]$sshPort) -or $sshPort -lt 1 -or $sshPort -gt 65535) {
+              throw 'SSH_PORT must be an integer between 1 and 65535.'
+          }
+
+          "image=$($env:REGISTRY)/wuji:$($env:GITHUB_REF_NAME)" >> $env:GITHUB_OUTPUT
+          "registry_host=$($env:REGISTRY.Split('/')[0])" >> $env:GITHUB_OUTPUT
+
+          # 使用 Base64 传递目录及登录信息，避免 SSH 远端 Shell 解释其中的引号、美元符号。
+          foreach ($key in @('DEPLOY_DIR', 'REGISTRY_USERNAME', 'REGISTRY_PASSWORD')) {
+              $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([Environment]::GetEnvironmentVariable($key)))
+              Write-Output "::add-mask::$encoded"
+              "$($key.ToLowerInvariant())_b64=$encoded" >> $env:GITHUB_OUTPUT
+          }
+          $compose = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $env:GITHUB_WORKSPACE 'docker/compose.yaml')))
+          "compose_b64=$compose" >> $env:GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to image registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ steps.release.outputs.registry_host }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: backend
+          file: backend/Dockerfile
+          push: true
+          tags: ${{ steps.release.outputs.image }}
+
+      # 已启用时必须成功加入内网，后续 SSH 部署才会执行。
+      - name: Connect to Tailscale
+        id: tailscale
+        if: ${{ steps.release.outputs.tailscale_enabled == 'true' }}
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:github-actions
+
+      - name: Update production container
+        id: server
+        uses: appleboy/ssh-action@v1
+        env:
+          DEPLOY_DIR_B64: ${{ steps.release.outputs.deploy_dir_b64 }}
+          REGISTRY_USERNAME_B64: ${{ steps.release.outputs.registry_username_b64 }}
+          REGISTRY_PASSWORD_B64: ${{ steps.release.outputs.registry_password_b64 }}
+          REGISTRY_HOST: ${{ steps.release.outputs.registry_host }}
+          WUJI_IMAGE: ${{ steps.release.outputs.image }}
+          COMPOSE_B64: ${{ steps.release.outputs.compose_b64 }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          command_timeout: 20m
+          envs: DEPLOY_DIR_B64,REGISTRY_USERNAME_B64,REGISTRY_PASSWORD_B64,REGISTRY_HOST,WUJI_IMAGE,COMPOSE_B64
+          script: |
+            set -eu
+            DEPLOY_DIR=$(printf '%s' "$DEPLOY_DIR_B64" | base64 --decode)
+            REGISTRY_USERNAME=$(printf '%s' "$REGISTRY_USERNAME_B64" | base64 --decode)
+            REGISTRY_PASSWORD=$(printf '%s' "$REGISTRY_PASSWORD_B64" | base64 --decode)
+            if [ ! -f "$DEPLOY_DIR/.env" ]; then
+              echo 'Prepare DEPLOY_DIR/.env on the server before deployment.' >&2
+              exit 1
+            fi
+            cd "$DEPLOY_DIR"
+            umask 077
+
+            # 发布仅更新 Compose 和版本记录，不覆盖服务器运行参数。
+            printf '%s' "$COMPOSE_B64" | base64 --decode > compose.yaml.tmp
+            mv -f compose.yaml.tmp compose.yaml
+            docker compose --env-file .env -f compose.yaml config --quiet
+
+            # 使用临时登录目录，避免覆盖服务器已有 Docker 仓库凭据。
+            DOCKER_CONFIG=$(mktemp -d)
+            export DOCKER_CONFIG
+            trap 'rm -f "$DOCKER_CONFIG/config.json"; rmdir "$DOCKER_CONFIG"' EXIT
+            printf '%s' "$REGISTRY_PASSWORD" | docker login "$REGISTRY_HOST" --username "$REGISTRY_USERNAME" --password-stdin
+            docker compose --env-file .env -f compose.yaml pull wuji
+
+            # 先执行数据库迁移再启动新版本；应用启动时会校验迁移版本一致。
+            docker compose --env-file .env -f compose.yaml run --rm --no-deps wuji \
+              python -m alembic upgrade head
+            docker compose --env-file .env -f compose.yaml up --detach --no-build wuji
+
+            printf 'WUJI_IMAGE=%s\n' "$WUJI_IMAGE" > release.env.tmp
+            mv -f release.env.tmp release.env
+
+      - name: Write deployment result
+        if: ${{ always() }}
+        shell: pwsh
+        env:
+          RELEASE_IMAGE: ${{ steps.release.outputs.image }}
+          BUILD_RESULT: ${{ steps.build.outcome }}
+          TAILSCALE_ENABLED: ${{ steps.release.outputs.tailscale_enabled }}
+          TAILSCALE_RESULT: ${{ steps.tailscale.outcome }}
+          DEPLOY_RESULT: ${{ steps.server.outcome }}
+        run: |
+          @"
+          ## wuji backend production deployment
+          - Tag: $env:GITHUB_REF_NAME
+          - Image: $env:RELEASE_IMAGE
+          - Build: $env:BUILD_RESULT
+          - Tailscale enabled: $env:TAILSCALE_ENABLED
+          - Tailscale connection: $env:TAILSCALE_RESULT
+          - Server update: $env:DEPLOY_RESULT
+          "@ >> $env:GITHUB_STEP_SUMMARY

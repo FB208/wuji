@@ -1,6 +1,7 @@
 node_modules/
 backend/.venv/
-backend/.env
+.env
+.env.secrets
 backend/logs/
 __pycache__/
 *.pyc
