@@ -200,7 +200,7 @@ async def search_by_audio(
     transcript = await speech_provider.transcribe(audio, audio_ext)
     transcript = (transcript or "").strip()
     if not transcript or len(transcript) > 512:
-        raise AppError("VALIDATION_ERROR", "识别结果无效", status_code=422, retryable=False)
+        raise AppError("VALIDATION_ERROR", "请求内容无效", status_code=422, retryable=False)
     result = await _search(db, user_id, family_id, transcript, context)
     result["transcript"] = transcript
     return result

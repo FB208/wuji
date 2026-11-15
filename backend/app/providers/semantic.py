@@ -152,9 +152,9 @@ class SemanticProvider:
             async with httpx.AsyncClient(timeout=settings.semantic_call_timeout_seconds) as client:
                 async with client.stream("POST", url, json=body, headers=headers) as resp:
                     if resp.status_code == 429 or resp.status_code >= 500:
-                        raise AppError("SEMANTIC_UNAVAILABLE", "语义服务暂时不可用，请稍后重试", status_code=503, retryable=True)
+                        raise AppError("SEMANTIC_UNAVAILABLE", "服务暂时不可用，请稍后重试", status_code=503, retryable=True)
                     if resp.status_code >= 400:
-                        raise AppError("SEMANTIC_UNAVAILABLE", "语义服务请求失败", status_code=502, retryable=True)
+                        raise AppError("SEMANTIC_UNAVAILABLE", "服务请求失败", status_code=502, retryable=True)
                     async for chunk in resp.aiter_bytes():
                         if len(raw) + len(chunk) > settings.semantic_max_response_bytes:
                             raise ValueError("response too large")
@@ -304,10 +304,10 @@ class SemanticProvider:
             raise
         except TimeoutError as exc:
             logger.error("入库语义判断超时：%s", type(exc).__name__)
-            raise AppError("SEMANTIC_UNAVAILABLE", "语义服务暂时不可用，请稍后重试", status_code=503, retryable=True) from exc
+            raise AppError("SEMANTIC_UNAVAILABLE", "服务暂时不可用，请稍后重试", status_code=503, retryable=True) from exc
         except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.TransportError) as exc:
             logger.error("入库语义请求失败：%s", type(exc).__name__)
-            raise AppError("SEMANTIC_UNAVAILABLE", "语义服务暂时不可用，请稍后重试", status_code=503, retryable=True) from exc
+            raise AppError("SEMANTIC_UNAVAILABLE", "服务暂时不可用，请稍后重试", status_code=503, retryable=True) from exc
         except Exception as exc:
             logger.error("入库语义解析失败：%s", type(exc).__name__)
             raise record_parse_failed() from exc

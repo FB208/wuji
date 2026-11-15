@@ -49,7 +49,7 @@ def audio_too_long(message: str = "录音超过 60 秒，请重新录入") -> Ap
     return AppError("AUDIO_TOO_LONG", message, status_code=400)
 
 
-def transcribe_failed(message: str = "语音识别失败，请重试") -> AppError:
+def transcribe_failed(message: str = "语音处理失败，请重试") -> AppError:
     return AppError("TRANSCRIBE_FAILED", message, status_code=502, retryable=True)
 
 

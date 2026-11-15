@@ -106,7 +106,7 @@ async def test_silent_audio_message():
         with pytest.raises(AppError) as ei:
             await sp.speech_provider.transcribe(b"audio-bytes", "mp3")
     assert ei.value.code == "TRANSCRIBE_FAILED"
-    assert "没有识别到有效内容" in ei.value.message
+    assert "没有听清内容" in ei.value.message
 
 
 async def test_empty_result_text():

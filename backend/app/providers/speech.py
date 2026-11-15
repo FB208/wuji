@@ -129,11 +129,11 @@ class VolcSpeechProvider:
                     raise transcribe_failed() from exc
                 text = (text or "").strip()
                 if not text:
-                    raise transcribe_failed("没有识别到有效内容，请重新说一次")
+                    raise transcribe_failed("没有听清内容，请重新说一次")
                 return text
             if code in _STATUS_PENDING:
                 if time.monotonic() >= deadline:
-                    raise transcribe_failed("语音识别超时，请重试")
+                    raise transcribe_failed("语音处理超时，请重试")
                 await asyncio.sleep(settings.volc_speech_poll_interval_seconds)
                 continue
             logger.error(
@@ -141,7 +141,7 @@ class VolcSpeechProvider:
                 task_id, round_no, resp.status_code, code, resp.headers.get("X-Api-Message", ""),
             )
             if code == _STATUS_SILENT:
-                raise transcribe_failed("没有识别到有效内容，请重新说一次")
+                raise transcribe_failed("没有听清内容，请重新说一次")
             raise transcribe_failed()
 
 

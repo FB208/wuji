@@ -19,11 +19,11 @@ interface Step {
 /** 后端任务阶段 → 用户可见文案（不确定进度只报"在做什么"，不造假百分比） */
 const STAGE_TEXT: Record<string, string> = {
   queued: "排队中",
-  asr_submit: "上传音频到识别服务",
-  asr_submitted: "已提交识别",
-  asr_polling: "识别中",
-  judging: "理解内容",
-  rejudging: "内容有变化，重新理解",
+  asr_submit: "提交语音",
+  asr_submitted: "已提交",
+  asr_polling: "处理中",
+  judging: "整理内容",
+  rejudging: "内容有变化，重新整理",
   writing: "写入记录",
 };
 
@@ -286,8 +286,8 @@ Page({
     const steps: Step[] = [
       { key: "photo", label: "上传照片", status: draft.imageToken ? "done" : "active", detail: "" },
       { key: "audio", label: "上传语音", status: draft.transcript ? "done" : "active", detail: "" },
-      { key: "asr", label: "语音识别", status: draft.transcript ? "done" : "pending", detail: "" },
-      { key: "judge", label: "理解并写入", status: "pending", detail: "" },
+      { key: "asr", label: "处理语音", status: draft.transcript ? "done" : "pending", detail: "" },
+      { key: "judge", label: "整理并写入", status: "pending", detail: "" },
     ];
     this.setData({ state: "UPLOADING", processing: true, statusText: "正在上传", secondaryText: "", imageProgress: 0, audioProgress: 0, steps });
     try {
@@ -319,8 +319,8 @@ Page({
                 if (!guard.isFrameCurrent(op.generation)) return;
                 this._setStep("audio", "done", "");
                 const text = stage === "asr_polling" && detail
-                  ? `识别中 · 第${detail}轮`
-                  : STAGE_TEXT[stage] || "识别中";
+                  ? `处理中 · 第${detail}轮`
+                  : STAGE_TEXT[stage] || "处理中";
                 this._setStep("asr", "active", text);
               },
             })
@@ -360,7 +360,7 @@ Page({
           onStage: (stage, detail) => {
             if (!guard.isFrameCurrent(op.generation)) return;
             const text = stage === "asr_polling" && detail
-              ? `识别中 · 第${detail}轮`
+              ? `处理中 · 第${detail}轮`
               : STAGE_TEXT[stage] || "";
             this._setStep("judge", "active", text || undefined);
           },
