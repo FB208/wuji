@@ -442,20 +442,40 @@ test("edit: 旧POST回调不能清hide/show后第二pending save", async () => {
   e.page.onHide();
 });
 
-for (const action of ["hide", "family"]) {
-  test(`edit: picker callback在${action}后不写`, async () => {
-    const picker = {};
-    const e = env({ chooseMedia: (o) => { picker.current = o; } }, { id: "5" }, ED);
-    await readyEdit(e);
-    e.page.retakePhoto();
-    if (action === "hide") e.page.onHide();
-    else changeScope(e);
-    const count = e.page._setDataCalls.length;
-    picker.current.success({ tempFiles: [{ tempFilePath: "late-photo" }] });
-    assert.equal(e.page._setDataCalls.length, count);
-    assert.equal(e.page.data.newPhotoPath, "");
-  });
-}
+test("edit: picker回调经hide/show往返仍写入", async () => {
+  const picker = {};
+  const e = env({ chooseMedia: (o) => { picker.current = o; } }, { id: "5" }, ED);
+  await readyEdit(e);
+  e.page.retakePhoto();
+  e.page.onHide();
+  e.page.onShow();
+  await flush();
+  picker.current.success({ tempFiles: [{ tempFilePath: "late-photo" }] });
+  assert.equal(e.page.data.newPhotoPath, "late-photo");
+});
+test("edit: picker回调早于onShow写入且恢复后保留", async () => {
+  const picker = {};
+  const e = env({ chooseMedia: (o) => { picker.current = o; } }, { id: "5" }, ED);
+  await readyEdit(e);
+  e.page.retakePhoto();
+  e.page.onHide();
+  picker.current.success({ tempFiles: [{ tempFilePath: "early-photo" }] });
+  assert.equal(e.page.data.newPhotoPath, "early-photo");
+  e.page.onShow();
+  await flush();
+  assert.equal(e.page.data.newPhotoPath, "early-photo");
+});
+test("edit: picker回调在scope变化后不写", async () => {
+  const picker = {};
+  const e = env({ chooseMedia: (o) => { picker.current = o; } }, { id: "5" }, ED);
+  await readyEdit(e);
+  e.page.retakePhoto();
+  changeScope(e);
+  const count = e.page._setDataCalls.length;
+  picker.current.success({ tempFiles: [{ tempFilePath: "late-photo" }] });
+  assert.equal(e.page._setDataCalls.length, count);
+  assert.equal(e.page.data.newPhotoPath, "");
+});
 
 test("detail: DELETE pending hide零写，show GET恢复不残留deleting", async () => {
   const d = deferred();

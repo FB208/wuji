@@ -174,20 +174,22 @@ Page({
   },
   chooseFromAlbum() {
     if (!this.active() || this.data.state !== "CAMERA") return;
-    const guard = this._guard as PageScope;
-    const frame = guard.frame();
-    const uid = this._sessionScope!.userId;
+    // 系统相册会触发页面 onHide/onShow，代次必然失效，回调里只校验会话 scope
+    const scope = this._sessionScope!;
     wx.chooseMedia({
       count: 1,
       mediaType: ["image"],
       sizeType: ["compressed"],
       sourceType: ["album"],
       success: (res) => {
-        const g = this._guard as PageScope;
-        if (!g.isFrameCurrent(frame) || !store.user || store.user.id !== uid) return;
+        if (!store.isCurrentScope(scope) || this.data.state !== "CAMERA") return;
         const path = res.tempFiles && res.tempFiles[0] ? res.tempFiles[0].tempFilePath : "";
         if (!path) return;
         this.acceptPhoto(path);
+      },
+      fail: (err) => {
+        if (!err || /cancel/.test(err.errMsg || "")) return;
+        console.warn("chooseMedia失败", err);
       },
     });
   },

@@ -270,20 +270,24 @@ Page({
   },
   retakePhoto() {
     if (!this.active() || this.data.saving || this.data.needsRefresh || this.data.saved) return;
-    const guard = this._guard as PageScope;
-    const op = guard.capture();
-    const uid = this._sessionScope!.userId;
+    // 系统相册/相机会触发页面 onHide/onShow，代次必然失效，回调里只校验会话 scope
+    const scope = this._loaded!.scope;
     wx.chooseMedia({
       count: 1,
       mediaType: ["image"],
       sizeType: ["compressed"],
       sourceType: ["camera", "album"],
       success: (res) => {
-        const g = this._guard as PageScope;
-        if (!g.isCurrent(op) || !store.user || store.user.id !== uid || this.data.saving || this.data.saved || this.data.needsRefresh) return;
+        if (!store.isCurrentScope(scope) || this.data.saving || this.data.saved || this.data.needsRefresh) return;
         if (!res.tempFiles || !res.tempFiles.length || !res.tempFiles[0].tempFilePath) return;
-        this.setData({ newPhotoPath: res.tempFiles[0].tempFilePath });
+        const path = res.tempFiles[0].tempFilePath;
+        this.setData({ newPhotoPath: path });
+        if (this._draft) this._draft.fields.newPhotoPath = path;
         this._cachedToken = null;
+      },
+      fail: (err) => {
+        if (!err || /cancel/.test(err.errMsg || "")) return;
+        console.warn("chooseMedia失败", err);
       },
     });
   },

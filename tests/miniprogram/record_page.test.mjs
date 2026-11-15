@@ -28,7 +28,7 @@ function env(overrides = {}) {
     createCameraContext: () => ({
       takePhoto: (o) => { calls.takePhoto.push(1); o.success({ tempImagePath: "cam1.jpg" }); },
     }),
-    chooseMedia: (o) => { o.success({ tempFiles: [{ tempFilePath: "alb1.jpg" }] }); },
+    chooseMedia: (o) => { if (overrides.chooseMedia) overrides.chooseMedia(o); else o.success({ tempFiles: [{ tempFilePath: "alb1.jpg" }] }); },
     openSetting: () => {},
   });
   const storeMod = loadTsModule(K("store/index.ts"), { globals: { wx: wxBase } });
@@ -157,6 +157,41 @@ test("F 账号/家庭变旧请求不写UI", async () => {
   await flush();
   assert.notEqual(e.page.data.state, "SUCCESS");
   assert.equal(e.calls.switchTab.length, 0);
+});
+test("E 相册选图经onHide/onShow往返仍接收", async () => {
+  const picker = {};
+  const e = env({ chooseMedia: (o) => { picker.current = o; } });
+  await boot(e);
+  e.page.chooseFromAlbum();
+  e.page.onHide();
+  e.page.onShow();
+  await flush();
+  picker.current.success({ tempFiles: [{ tempFilePath: "alb2.jpg" }] });
+  assert.equal(e.page.data.state, "READY");
+  assert.equal(e.page.data.photoPath, "alb2.jpg");
+});
+test("E2 相册回调早于onShow也接收且恢复后保留", async () => {
+  const picker = {};
+  const e = env({ chooseMedia: (o) => { picker.current = o; } });
+  await boot(e);
+  e.page.chooseFromAlbum();
+  e.page.onHide();
+  picker.current.success({ tempFiles: [{ tempFilePath: "alb3.jpg" }] });
+  assert.equal(e.page.data.photoPath, "alb3.jpg");
+  e.page.onShow();
+  await flush();
+  assert.equal(e.page.data.state, "READY");
+  assert.equal(e.page.data.photoPath, "alb3.jpg");
+});
+test("E3 相册回调在scope变化后丢弃", async () => {
+  const picker = {};
+  const e = env({ chooseMedia: (o) => { picker.current = o; } });
+  await boot(e);
+  e.page.chooseFromAlbum();
+  e.store.applyMe({ id: 2 }, [{ id: 30, name: "h", owner_user_id: 2, role: "owner" }]);
+  picker.current.success({ tempFiles: [{ tempFilePath: "alb4.jpg" }] });
+  assert.equal(e.page.data.state, "CAMERA");
+  assert.equal(e.page.data.photoPath, "");
 });
 test("模板保留原class/camera与record绑定", async () => {
   const wxml = (await import("node:fs")).readFileSync(path.join(MP_DIR, "pages/record/index.wxml"), "utf8");
