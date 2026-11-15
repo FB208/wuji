@@ -1,30 +1,30 @@
-import { ApiError } from "../../services/api";
-import { ensureLogin } from "../../services/auth";
-import { PageScope } from "../../services/page-scope";
-import { store, Scope } from "../../store/index";
+const { ApiError } = require("../../services/api");
+const { ensureLogin } = require("../../services/auth");
+const { PageScope } = require("../../services/page-scope");
+const { store } = require("../../store/index");
 
 Page({
   data: {
-    rows: [] as any[],
+    rows: [],
     ready: false,
     busy: false,
     noFamily: false,
     errorText: "",
   },
-  _guard: null as PageScope | null,
-  _sessionScope: null as Scope | null,
+  _guard: null,
+  _sessionScope: null,
   _authFailed: false,
 
   onLoad() {
     this._guard = new PageScope();
   },
   onShow() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     guard.show();
     this.activate();
   },
   async activate() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     if (!guard.isFrameCurrent(guard.frame())) return;
     this._authFailed = false;
     guard.invalidate();
@@ -58,13 +58,13 @@ Page({
     });
   },
   onHide() {
-    (this._guard as PageScope).hide();
+    this._guard.hide();
   },
   onUnload() {
     this.onHide();
   },
-  active(): boolean {
-    const guard = this._guard as PageScope;
+  active() {
+    const guard = this._guard;
     return (
       !!guard &&
       guard.isFrameCurrent(guard.frame()) &&
@@ -75,7 +75,7 @@ Page({
     );
   },
 
-  onPick(e: WechatMiniprogram.CustomEvent) {
+  onPick(e) {
     if (!this.active()) return;
     const id = Number(e.currentTarget.dataset.id);
     if (!id || !this.data.rows.some((r) => r.id === id) || !store.families.some((f) => f.id === id)) return;
@@ -83,7 +83,7 @@ Page({
     // 切换后立即刷新数据范围（文档 7.4）
     store.setCurrentFamily(id);
     if (store.currentFamilyId !== id) return;
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     if (!store.user || store.user.id !== uid) return;
     if (!guard.isFrameCurrent(guard.frame())) return;
     const pages = getCurrentPages ? getCurrentPages() : [];
@@ -94,11 +94,11 @@ Page({
     }
   },
   onRetryTap() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     if (guard.isFrameCurrent(guard.frame()) && !this.data.busy) this.activate();
   },
   goProfile() {
-    if (!this.active() || !this._sessionScope!.userId) return;
+    if (!this.active() || !this._sessionScope.userId) return;
     wx.switchTab({ url: "/pages/profile/index" });
   },
 });

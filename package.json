@@ -4,11 +4,6 @@
   "private": true,
   "description": "唔叽 · 家庭收纳工具（微信小程序 + FastAPI）",
   "scripts": {
-    "typecheck": "tsc --noEmit",
     "test": "node --test \"tests/miniprogram/**/*.test.mjs\""
-  },
-  "devDependencies": {
-    "miniprogram-api-typings": "^4.0.0",
-    "typescript": "^5.5.0"
   }
 }

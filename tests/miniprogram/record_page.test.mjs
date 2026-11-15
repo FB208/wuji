@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { loadTsModule, mockWx, makePage, MP_DIR, noticeMock } from "./helpers/loader.mjs";
+import { loadModule, mockWx, makePage, MP_DIR, noticeMock } from "./helpers/loader.mjs";
 const K = (s) => MP_DIR.replaceAll(path.sep, "/") + "/" + s;
-const PAGE = path.join(MP_DIR, "pages/record/index.ts");
+const PAGE = path.join(MP_DIR, "pages/record/index.js");
 function deferred() { let r, rej; const p = new Promise((res, j) => { r = res; rej = j; }); return { p, resolve: r, reject: rej }; }
 async function flush(n = 12) { for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0)); }
 function makeClock() {
@@ -31,7 +31,7 @@ function env(overrides = {}) {
     chooseMedia: (o) => { if (overrides.chooseMedia) overrides.chooseMedia(o); else o.success({ tempFiles: [{ tempFilePath: "alb1.jpg" }] }); },
     openSetting: () => {},
   });
-  const storeMod = loadTsModule(K("store/index.ts"), { globals: { wx: wxBase } });
+  const storeMod = loadModule(K("store/index.js"), { globals: { wx: wxBase } });
   const store = storeMod.store;
   store.applyMe({ id: 1 }, [{ id: 10, name: "f", owner_user_id: 1, role: "owner" }]);
   const apiMod = {
@@ -39,7 +39,7 @@ function env(overrides = {}) {
     request: (o) => { calls.req.push({ path: o.path, method: o.method, data: JSON.parse(JSON.stringify(o.data || {})), key: o.idempotencyKey }); return overrides.request ? overrides.request(o) : Promise.resolve({}); },
     newIdempotencyKey: (() => { let n = 0; return () => "key" + (++n); })(),
   };
-  const scopeMod = loadTsModule(K("services/page-scope.ts"), { globals: {}, mocks: { [K("store/index")]: storeMod, [K("services/api")]: apiMod } });
+  const scopeMod = loadModule(K("services/page-scope.js"), { globals: {}, mocks: { [K("store/index")]: storeMod, [K("services/api")]: apiMod } });
   const uploadMod = {
     uploadImage: (fid, p, o) => { calls.upload.push({ fid, p }); return overrides.upload ? overrides.upload({ fid, p }) : Promise.resolve({ image_token: "img1" }); },
     transcribeAudio: (p, o) => { calls.transcribe.push(p); return overrides.transcribe ? overrides.transcribe(p) : Promise.resolve({ transcript: "t" }); },
@@ -49,7 +49,7 @@ function env(overrides = {}) {
     },
   };
   let def;
-  loadTsModule(PAGE, {
+  loadModule(PAGE, {
     globals: { wx: wxBase, Page: (d) => { def = d; }, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout },
     mocks: {
       [K("services/api")]: apiMod,

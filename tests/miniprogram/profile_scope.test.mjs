@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { loadTsModule, mockWx, makePage, MP_DIR, noticeMock } from "./helpers/loader.mjs";
+import { loadModule, mockWx, makePage, MP_DIR, noticeMock } from "./helpers/loader.mjs";
 
 const K = (p) => MP_DIR.replaceAll(path.sep, "/") + "/" + p;
 const clone = (v) => v === undefined ? v : JSON.parse(JSON.stringify(v));
@@ -31,7 +31,7 @@ function env(pageName = "profile", options = {}) {
     navigateBack: () => calls.nav.push("back"),
     stopPullDownRefresh: () => calls.stop++,
   });
-  const sm = loadTsModule(K("store/index.ts"), { globals: { wx } });
+  const sm = loadModule(K("store/index.js"), { globals: { wx } });
   const store = sm.store;
   if (!options.cold) store.applyMe(user(), [family()]);
   const api = {
@@ -53,11 +53,11 @@ function env(pageName = "profile", options = {}) {
       return options.get ? options.get(o) : Promise.resolve({ items: [item(1)], total: 23 });
     },
   };
-  const gm = loadTsModule(K("services/page-scope.ts"), {
+  const gm = loadModule(K("services/page-scope.js"), {
     mocks: { [K("services/api")]: api, [K("store/index")]: sm },
   });
   let definition;
-  loadTsModule(K(`pages/${pageName}/index.ts`), {
+  loadModule(K(`pages/${pageName}/index.js`), {
     globals: { wx, Page: (d) => { definition = d; }, getCurrentPages: () => options.singlePage ? [] : [{}, {}] },
     mocks: {
       [K("services/api")]: api,

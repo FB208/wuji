@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { loadTsModule, mockWx, MP_DIR, noticeMock } from "./helpers/loader.mjs";
+import { loadModule, mockWx, MP_DIR, noticeMock } from "./helpers/loader.mjs";
 const K = (s) => MP_DIR.replaceAll(path.sep, "/") + "/" + s;
 
 function deferred() { let r, rej; const p = new Promise((res, j) => { r = res; rej = j; }); return { p, resolve: r, reject: rej }; }
@@ -25,7 +25,7 @@ function env() {
     removeStorageSync: (k) => storage.delete(k),
     login: (o) => { wxLoginCb = o; },
     request: (o) => {
-      const m = o.url.match(/api\.example\.com\/api\/v1(.*)$/);
+      const m = o.url.match(/\/api\/v1(.*)$/);
       const pathOnly = m ? m[1].split("?")[0] : o.url;
       calls.req.push({ path: pathOnly, method: o.method, data: JSON.parse(JSON.stringify(o.data || {})), header: JSON.parse(JSON.stringify(o.header || {})) });
       const task = { abort: () => {} };
@@ -41,7 +41,7 @@ function env() {
       return task;
     },
     uploadFile: (o) => {
-      const m = o.url.match(/api\.example\.com\/api\/v1(.*)$/);
+      const m = o.url.match(/\/api\/v1(.*)$/);
       const pathOnly = m ? m[1].split("?")[0] : o.url;
       calls.req.push({ path: pathOnly + "#upload", method: "POST", data: JSON.parse(JSON.stringify(o.formData || {})) });
       const task = { abort: () => {}, _progressCb: null, onProgressUpdate(cb) { task._progressCb = cb; } };
@@ -61,9 +61,9 @@ function env() {
     switchTab: () => {},
     navigateTo: () => {},
   });
-  const storeMod = loadTsModule(K("store/index.ts"), { globals: { wx: wxBase } });
-  const apiMod = loadTsModule(K("services/api.ts"), { globals: { wx: wxBase }, mocks: { [K("services/notice")]: noticeMock(wxBase) } });
-  const authMod = loadTsModule(K("services/auth.ts"), {
+  const storeMod = loadModule(K("store/index.js"), { globals: { wx: wxBase } });
+  const apiMod = loadModule(K("services/api.js"), { globals: { wx: wxBase }, mocks: { [K("services/notice")]: noticeMock(wxBase) } });
+  const authMod = loadModule(K("services/auth.js"), {
     globals: { wx: wxBase },
     mocks: { [K("services/api")]: apiMod, [K("store/index")]: storeMod },
   });

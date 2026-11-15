@@ -1,5 +1,5 @@
 /** 按住说话：按下开始录音，上滑取消，松开提交（文档 4.2 / 8.2）。 */
-import { recorder, RecordResult } from "../../services/recorder";
+const { recorder } = require("../../services/recorder");
 
 const CANCEL_DISTANCE = 80;
 
@@ -17,63 +17,63 @@ Component({
   },
   pageLifetimes: {
     hide() {
-      (this as any)._visible = false;
+      this._visible = false;
       this.interrupt();
     },
     show() {
-      (this as any)._visible = true;
+      this._visible = true;
     },
   },
   lifetimes: {
     attached() {
-      (this as any)._visible = true;
+      this._visible = true;
     },
     detached() {
-      (this as any)._visible = false;
+      this._visible = false;
       this.interrupt();
     },
   },
   methods: {
     clearTimer() {
-      const timer = (this as any)._timer;
+      const timer = this._timer;
       if (timer !== undefined && timer !== null) {
         clearInterval(timer);
-        (this as any)._timer = null;
+        this._timer = null;
       }
     },
-    bump(): number {
-      (this as any)._gen = ((this as any)._gen || 0) + 1;
-      return (this as any)._gen;
+    bump() {
+      this._gen = (this._gen || 0) + 1;
+      return this._gen;
     },
-    alive(gen: number): boolean {
-      return (this as any)._gen === gen && (this as any)._visible !== false && !this.data.disabled;
+    alive(gen) {
+      return this._gen === gen && this._visible !== false && !this.data.disabled;
     },
     interrupt() {
-      (this as any)._pressed = false;
-      (this as any)._started = false;
-      const pending = (this as any)._pending as Promise<RecordResult | null> | undefined;
+      this._pressed = false;
+      this._started = false;
+      const pending = this._pending;
       this.bump();
       this.clearTimer();
       if (this.data.recording) {
         this.setData({ recording: false, starting: false, willCancel: false, seconds: 0 });
       }
       if (pending) {
-        (this as any)._pending = null;
+        this._pending = null;
         recorder.stop(true, pending).catch(() => {});
       }
     },
-    async onTouchStart(e: WechatMiniprogram.TouchEvent) {
-      if (this.data.disabled || this.data.recording || (this as any)._pending) return;
+    async onTouchStart(e) {
+      if (this.data.disabled || this.data.recording || this._pending) return;
       const gen = this.bump();
-      (this as any)._pressed = true;
-      (this as any)._started = false;
-      (this as any)._startY = e.touches[0].clientY;
+      this._pressed = true;
+      this._started = false;
+      this._startY = e.touches[0].clientY;
       // 按下即反馈：权限检查和录音机初始化在后台进行
       this.setData({ recording: true, starting: true, willCancel: false, seconds: 0 });
       this.triggerEvent("recordstart");
       const granted = await recorder.requestPermission();
       if (!this.alive(gen)) return;
-      if (!(this as any)._pressed) {
+      if (!this._pressed) {
         this.setData({ recording: false, starting: false, willCancel: false, seconds: 0 });
         this.triggerEvent("recordcancel");
         return;
@@ -84,21 +84,21 @@ Component({
         return;
       }
       const promise = recorder.start(() => {
-        if (!this.alive(gen) || !(this as any)._pressed) {
+        if (!this.alive(gen) || !this._pressed) {
           recorder.stop(true, promise).catch(() => {});
           return;
         }
-        (this as any)._started = true;
+        this._started = true;
         this.setData({ starting: false });
         this.triggerEvent("recordready");
         this.clearTimer();
-        (this as any)._timer = setInterval(() => {
+        this._timer = setInterval(() => {
           this.setData({ seconds: this.data.seconds + 1 });
         }, 1000);
       });
-      (this as any)._pending = promise;
+      this._pending = promise;
       promise
-        .then((result: RecordResult | null) => {
+        .then((result) => {
           if (!this.alive(gen)) return;
           this.clearTimer();
           if (result === null) {
@@ -107,21 +107,21 @@ Component({
             this.triggerEvent("recordfinish", { tempFilePath: result.tempFilePath });
           }
         })
-        .catch((err: Error) => {
+        .catch((err) => {
           if (!this.alive(gen)) return;
           this.clearTimer();
           this.triggerEvent("recorderror", { message: err.message });
         })
         .finally(() => {
-          if ((this as any)._pending === promise) (this as any)._pending = null;
-          if ((this as any)._gen === gen) {
+          if (this._pending === promise) this._pending = null;
+          if (this._gen === gen) {
             this.setData({ recording: false, starting: false, willCancel: false });
           }
         });
     },
-    onTouchMove(e: WechatMiniprogram.TouchEvent) {
+    onTouchMove(e) {
       if (!this.data.recording) return;
-      const startY = (this as any)._startY as number;
+      const startY = this._startY;
       const willCancel = startY - e.touches[0].clientY > CANCEL_DISTANCE;
       if (willCancel !== this.data.willCancel) {
         this.setData({ willCancel });
@@ -129,22 +129,22 @@ Component({
       }
     },
     onTouchEnd() {
-      (this as any)._pressed = false;
-      const pending = (this as any)._pending as Promise<RecordResult | null> | undefined;
+      this._pressed = false;
+      const pending = this._pending;
       // 录音机尚未就绪时松开视为取消；onStart 回调会因 !_pressed 自动取消
-      const cancel = this.data.willCancel || !(this as any)._started;
+      const cancel = this.data.willCancel || !this._started;
       this.clearTimer();
       this.setData({ recording: false, starting: false, willCancel: false, seconds: 0 });
-      if (pending && (this as any)._started) {
+      if (pending && this._started) {
         recorder.stop(cancel, pending).catch(() => {});
       }
     },
     onTouchCancel() {
-      (this as any)._pressed = false;
-      const pending = (this as any)._pending as Promise<RecordResult | null> | undefined;
+      this._pressed = false;
+      const pending = this._pending;
       this.clearTimer();
       this.setData({ recording: false, starting: false, willCancel: false, seconds: 0 });
-      if (pending && (this as any)._started) {
+      if (pending && this._started) {
         recorder.stop(true, pending).catch(() => {});
       }
     },

@@ -2,9 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { loadTsModule, mockWx, makePage, MP_DIR, noticeMock } from "./helpers/loader.mjs";
+import { loadModule, mockWx, makePage, MP_DIR, noticeMock } from "./helpers/loader.mjs";
 
-const PAGE = path.join(MP_DIR, "pages/search/index.ts");
+const PAGE = path.join(MP_DIR, "pages/search/index.js");
 const WXML = path.join(MP_DIR, "pages/search/index.wxml");
 const K = (s) => MP_DIR.replaceAll(path.sep, "/") + "/" + s;
 
@@ -25,7 +25,7 @@ function response(context = { family_id: 10 }, ids = [1]) {
 function env(overrides = {}) {
   const calls = { text: [], audio: [], me: 0, login: 0, toasts: [], navs: [], relaunches: [], aborted: [], interrupts: 0 };
   const storage = new Map();
-  const storeMod = loadTsModule(K("store/index.ts"), {
+  const storeMod = loadModule(K("store/index.js"), {
     globals: {
       wx: mockWx({
         getStorageSync: (k) => (storage.has(k) ? storage.get(k) : ""),
@@ -55,7 +55,7 @@ function env(overrides = {}) {
       return overrides.upload ? overrides.upload(o) : Promise.resolve(response());
     },
   };
-  const scopeMod = loadTsModule(K("services/page-scope.ts"), {
+  const scopeMod = loadModule(K("services/page-scope.js"), {
     globals: {},
     mocks: { [K("store/index")]: storeMod, [K("services/api")]: apiMod },
   });
@@ -70,7 +70,7 @@ function env(overrides = {}) {
     refreshMe: () => { calls.me++; return overrides.refreshMe ? overrides.refreshMe(store) : Promise.resolve({ user: store.user, families: store.families }); },
   };
   let def;
-  loadTsModule(PAGE, {
+  loadModule(PAGE, {
     globals: { wx, Page: (d) => { def = d; } },
     mocks: {
       [K("services/api")]: apiMod,

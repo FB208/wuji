@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { loadTsModule, mockWx, MP_DIR } from "./helpers/loader.mjs";
+import { loadModule, mockWx, MP_DIR } from "./helpers/loader.mjs";
 
-const RECORDER_PATH = path.join(MP_DIR, "services/recorder.ts");
+const RECORDER_PATH = path.join(MP_DIR, "services/recorder.js");
 
 function loadRecorder() {
   const callbacks = {};
@@ -18,7 +18,7 @@ function loadRecorder() {
   };
   const wx = mockWx({ getRecorderManager: () => manager });
   const fakeDate = { now: () => clock.t };
-  const mod = loadTsModule(RECORDER_PATH, {
+  const mod = loadModule(RECORDER_PATH, {
     globals: { wx, Date: fakeDate },
   });
   return { recorder: mod.recorder, callbacks, manager, clock };

@@ -1,15 +1,15 @@
 /** P10 加入家庭组：校验令牌、显示家庭组名称、加入并切换（文档 7.3）。 */
-import { request, ApiError } from "../../services/api";
-import { ensureLogin, refreshMe } from "../../services/auth";
-import { PageScope, ScopeOperation } from "../../services/page-scope";
-import { store, Scope } from "../../store/index";
-import { bindNotice, registerNotice, showNotice } from "../../services/notice";
+const { request, ApiError } = require("../../services/api");
+const { ensureLogin, refreshMe } = require("../../services/auth");
+const { PageScope } = require("../../services/page-scope");
+const { store } = require("../../store/index");
+const { bindNotice, registerNotice, showNotice } = require("../../services/notice");
 
 const TOKEN_MAX = 4096;
 
 Page({
   data: {
-    notice: null as any,
+    notice: null,
     familyName: "",
     ownerNickname: "",
     invalid: false,
@@ -20,14 +20,14 @@ Page({
     busy: false,
     errorText: "",
   },
-  _guard: null as PageScope | null,
-  _sessionScope: null as Scope | null,
+  _guard: null,
+  _sessionScope: null,
   _previewFID: 0,
   _token: "",
-  _navTimer: null as any,
+  _navTimer: null,
   _authFailed: false,
 
-  onLoad(query: Record<string, string>) {
+  onLoad(query) {
     this._guard = new PageScope();
     try {
       const raw = query && query.invite_token ? decodeURIComponent(query.invite_token) : "";
@@ -41,13 +41,13 @@ Page({
   },
   onShow() {
     registerNotice(bindNotice(this));
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     guard.show();
     if (!this._token) return;
     this.activate();
   },
   async activate() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     this._authFailed = false;
     guard.invalidate();
     const frame = guard.frame();
@@ -85,14 +85,14 @@ Page({
       clearTimeout(this._navTimer);
       this._navTimer = null;
     }
-    (this._guard as PageScope).hide();
+    this._guard.hide();
   },
   onUnload() {
     this.onHide();
   },
 
-  active(): boolean {
-    const guard = this._guard as PageScope;
+  active() {
+    const guard = this._guard;
     return (
       !!guard &&
       guard.isFrameCurrent(guard.frame()) &&
@@ -104,7 +104,7 @@ Page({
   },
 
   clearForScopeChange() {
-    (this._guard as PageScope).invalidate();
+    this._guard.invalidate();
     if (this._navTimer !== null) {
       clearTimeout(this._navTimer);
       this._navTimer = null;
@@ -117,8 +117,8 @@ Page({
       errorText: "状态已变化，请重试",
     });
   },
-  async preview(): Promise<ScopeOperation | null> {
-    const guard = this._guard as PageScope;
+  async preview() {
+    const guard = this._guard;
     if (!this.active()) return null;
     guard.invalidate();
     const op = guard.capture();
@@ -127,8 +127,8 @@ Page({
     this._previewFID = 0;
     this.setData({ busy: true, loaded: false, errorText: "" });
     try {
-      const preview = await guard.run<{ family_id: number; family_name: string; owner_nickname: string | null }>(op, (hooks) =>
-        request<{ family_id: number; family_name: string; owner_nickname: string | null }>({
+      const preview = await guard.run(op, (hooks) =>
+        request({
           path: `/families/invite-preview?invite_token=${encodeURIComponent(token)}`,
           isCancelled: hooks.isCancelled,
           onTask: hooks.onTask,
@@ -169,18 +169,18 @@ Page({
   },
 
   async onJoin() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     if (!this.active() || !this.data.loaded || this.data.invalid || this.data.errorText) return;
     if (this.data.joining || this.data.joined || !this._previewFID) return;
     const op = guard.capture();
-    const uid = this._sessionScope!.userId;
+    const uid = this._sessionScope.userId;
     const fid = this._previewFID;
     const token = this._token;
     this.setData({ joining: true, errorText: "" });
-    let finishOp: ScopeOperation = op;
+    let finishOp = op;
     try {
-      const res = await guard.run<{ family_id: number }>(op, (hooks) =>
-        request<{ family_id: number }>({
+      const res = await guard.run(op, (hooks) =>
+        request({
           path: "/families/join",
           method: "POST",
           data: { invite_token: token },
@@ -210,7 +210,7 @@ Page({
       if (!guard.isCurrent(navOp)) return;
       this.setData({ joined: true });
       showNotice("加入成功", () => {
-        const g = this._guard as PageScope;
+        const g = this._guard;
         if (!g.isCurrent(navOp)) return;
         wx.switchTab({ url: "/pages/home/index" });
       });
@@ -223,14 +223,14 @@ Page({
       const message = err instanceof ApiError ? err.message : "加入失败，请重试";
       this.setData({ errorText: message });
     } finally {
-      const g = this._guard as PageScope;
+      const g = this._guard;
       if (g.isCurrent(finishOp)) {
         this.setData({ joining: false });
       }
     }
   },
   onRetry() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     if (!guard.isFrameCurrent(guard.frame())) return;
     if (this.data.busy || this.data.joining || this.data.joined) return;
     if (this._authFailed || !this._sessionScope || !store.isCurrentScope(this._sessionScope)) {
@@ -241,7 +241,7 @@ Page({
     this.preview();
   },
   goHome() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     if (!guard.isFrameCurrent(guard.frame()) || this.data.busy || this.data.joining) return;
     if (!store.user || !store.user.id) {
       wx.reLaunch({ url: "/pages/launch/index" });

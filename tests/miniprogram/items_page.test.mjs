@@ -2,9 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { loadTsModule, mockWx, makePage, MP_DIR } from "./helpers/loader.mjs";
+import { loadModule, mockWx, makePage, MP_DIR } from "./helpers/loader.mjs";
 
-const PAGE = path.join(MP_DIR, "pages/items/index.ts");
+const PAGE = path.join(MP_DIR, "pages/items/index.js");
 const K = (s) => MP_DIR.replaceAll(path.sep, "/") + "/" + s;
 
 function deferred() {
@@ -52,7 +52,7 @@ function env(overrides = {}) {
     stopPullDownRefresh: () => { calls.stopPull++; },
   });
   const globals = { wx: wxBase, Page: (d) => { captured = d; }, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout };
-  const storeMod = loadTsModule(K("store/index.ts"), { globals: { wx: wxBase } });
+  const storeMod = loadModule(K("store/index.js"), { globals: { wx: wxBase } });
   const store = storeMod.store;
   const apiMod = {
     ApiError: class extends Error {
@@ -64,7 +64,7 @@ function env(overrides = {}) {
       return overrides.request ? overrides.request(o) : Promise.resolve({ items: [{ id: 1, name: "a", updated_at: 0 }], total: 1 });
     },
   };
-  const scopeMod = loadTsModule(K("services/page-scope.ts"), {
+  const scopeMod = loadModule(K("services/page-scope.js"), {
     globals: {},
     mocks: { [K("store/index")]: storeMod, [K("services/api")]: apiMod },
   });
@@ -73,7 +73,7 @@ function env(overrides = {}) {
     refreshMe: () => { calls.me++; return overrides.refreshMe ? overrides.refreshMe(store) : Promise.resolve({ user: store.user, families: store.families }); },
   };
   let captured;
-  loadTsModule(PAGE, {
+  loadModule(PAGE, {
     globals,
     mocks: {
       [K("services/api")]: apiMod,

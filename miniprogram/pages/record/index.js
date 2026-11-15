@@ -1,23 +1,17 @@
 /** P03 收纳物品：拍照 → 按住说话 → 自动提交（文档 4 章）。 */
-import { newIdempotencyKey, ApiError } from "../../services/api";
-import { ensureLogin } from "../../services/auth";
-import { uploadImage, transcribeAudio, recordItem } from "../../services/upload";
-import { PageScope } from "../../services/page-scope";
-import { bindNotice, registerNotice, showNotice } from "../../services/notice";
-import { store, Scope } from "../../store/index";
+const { newIdempotencyKey, ApiError } = require("../../services/api");
+const { ensureLogin } = require("../../services/auth");
+const { uploadImage, transcribeAudio, recordItem } = require("../../services/upload");
+const { PageScope } = require("../../services/page-scope");
+const { bindNotice, registerNotice, showNotice } = require("../../services/notice");
+const { store } = require("../../store/index");
 
-type PageState = "CAMERA" | "READY" | "RECORDING" | "UPLOADING" | "SAVING" | "SUCCESS" | "FAILED";
-
-type StepStatus = "pending" | "active" | "done" | "failed";
-interface Step {
-  key: string;
-  label: string;
-  status: StepStatus;
-  detail: string;
-}
+// state: "CAMERA" | "READY" | "RECORDING" | "UPLOADING" | "SAVING" | "SUCCESS" | "FAILED"
+// steps[].status: "pending" | "active" | "done" | "failed"
+// _draft: { scope, photoPath, audioPath, imageToken, transcript, key, frozen }
 
 /** 后端任务阶段 → 用户可见文案（不确定进度只报"在做什么"，不造假百分比） */
-const STAGE_TEXT: Record<string, string> = {
+const STAGE_TEXT = {
   queued: "排队中",
   asr_submit: "提交语音",
   asr_submitted: "已提交",
@@ -27,19 +21,9 @@ const STAGE_TEXT: Record<string, string> = {
   writing: "写入记录",
 };
 
-interface Draft {
-  scope: Scope;
-  photoPath: string;
-  audioPath: string;
-  imageToken: string;
-  transcript: string;
-  key: string;
-  frozen: { family_id: number; image_token: string; transcript: string } | null;
-}
-
 Page({
   data: {
-    state: "CAMERA" as PageState,
+    state: "CAMERA",
     photoPath: "",
     cameraError: false,
     statusText: "",
@@ -52,13 +36,13 @@ Page({
     secondaryLabel: "",
     micReady: false,
     micWillCancel: false,
-    notice: null as any,
-    steps: [] as Step[],
+    notice: null,
+    steps: [],
   },
-  _guard: null as PageScope | null,
-  _sessionScope: null as Scope | null,
-  _draft: null as Draft | null,
-  _navTimer: null as any,
+  _guard: null,
+  _sessionScope: null,
+  _draft: null,
+  _navTimer: null,
   _authFailed: false,
 
   onLoad() {
@@ -66,11 +50,11 @@ Page({
   },
   onShow() {
     registerNotice(bindNotice(this));
-    (this._guard as PageScope).show();
+    this._guard.show();
     this.activate();
   },
   async activate() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     this._authFailed = false;
     guard.invalidate();
     const frame = guard.frame();
@@ -111,8 +95,8 @@ Page({
     const d = this._draft;
     if (d) {
       const restore = d.frozen || d.audioPath
-        ? { state: "FAILED" as PageState, statusText: "提交被中断", primaryLabel: "重新提交", secondaryLabel: "" }
-        : { state: "READY" as PageState, statusText: "", primaryLabel: "", secondaryLabel: "" };
+        ? { state: "FAILED", statusText: "提交被中断", primaryLabel: "重新提交", secondaryLabel: "" }
+        : { state: "READY", statusText: "", primaryLabel: "", secondaryLabel: "" };
       this.setData({ ...restore, photoPath: d.photoPath, processing: false, sessionReady: true });
     } else {
       this.setData({ state: "CAMERA", photoPath: "", processing: false, sessionReady: true });
@@ -124,16 +108,16 @@ Page({
       clearTimeout(this._navTimer);
       this._navTimer = null;
     }
-    const holder = (this as any).selectComponent && (this as any).selectComponent("#h2t");
+    const holder = this.selectComponent && this.selectComponent("#h2t");
     if (holder && holder.interrupt) holder.interrupt();
-    (this._guard as PageScope).hide();
+    this._guard.hide();
   },
   onUnload() {
     this.onHide();
   },
 
-  active(): boolean {
-    const guard = this._guard as PageScope;
+  active() {
+    const guard = this._guard;
     return (
       !!guard &&
       guard.isFrameCurrent(guard.frame()) &&
@@ -152,7 +136,7 @@ Page({
     });
   },
 
-  onCameraError(e?: WechatMiniprogram.CustomEvent) {
+  onCameraError(e) {
     console.warn("camera组件错误", e && e.detail);
     this.setData({ cameraError: true });
   },
@@ -161,13 +145,13 @@ Page({
   },
   takePhoto() {
     if (!this.active() || this.data.state !== "CAMERA") return;
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     const frame = guard.frame();
-    const uid = this._sessionScope!.userId;
+    const uid = this._sessionScope.userId;
     wx.createCameraContext().takePhoto({
       quality: "normal",
       success: (res) => {
-        const g = this._guard as PageScope;
+        const g = this._guard;
         if (!g.isFrameCurrent(frame) || !store.user || store.user.id !== uid) return;
         this.acceptPhoto(res.tempImagePath);
       },
@@ -176,7 +160,7 @@ Page({
   chooseFromAlbum() {
     if (!this.active() || this.data.state !== "CAMERA") return;
     // 系统相册会触发页面 onHide/onShow，代次必然失效，回调里只校验会话 scope
-    const scope = this._sessionScope!;
+    const scope = this._sessionScope;
     wx.chooseMedia({
       count: 1,
       mediaType: ["image"],
@@ -194,9 +178,9 @@ Page({
       },
     });
   },
-  acceptPhoto(path: string) {
-    const draft: Draft = {
-      scope: this._sessionScope!,
+  acceptPhoto(path) {
+    const draft = {
+      scope: this._sessionScope,
       photoPath: path,
       audioPath: "",
       imageToken: "",
@@ -220,7 +204,7 @@ Page({
   onRecordReady() {
     if (this.data.state === "RECORDING") this.setData({ micReady: true });
   },
-  onRecordMove(e: WechatMiniprogram.CustomEvent) {
+  onRecordMove(e) {
     if (this.data.state === "RECORDING") this.setData({ micWillCancel: !!e.detail.willCancel });
   },
   onRecordCancel() {
@@ -237,7 +221,7 @@ Page({
       this.setData({ state: "READY", secondaryText: "需要麦克风权限", micReady: false, micWillCancel: false });
     }
   },
-  onRecordFinish(e: WechatMiniprogram.CustomEvent) {
+  onRecordFinish(e) {
     if (!this.active() || (this.data.state !== "READY" && this.data.state !== "RECORDING")) return;
     const audioPath = e.detail.tempFilePath;
     const draft = this._draft;
@@ -250,14 +234,14 @@ Page({
     this.submit();
   },
 
-  _setStep(key: string, status: StepStatus, detail?: string) {
-    const steps = (this.data.steps as Step[]).map((s) =>
+  _setStep(key, status, detail) {
+    const steps = this.data.steps.map((s) =>
       s.key === key ? { ...s, status, detail: detail !== undefined ? detail : s.detail } : s
     );
     this.setData({ steps });
   },
 
-  fail(err: unknown, draft: Draft) {
+  fail(err, draft) {
     const code = err instanceof ApiError ? err.code : "";
     const message = err instanceof ApiError ? err.message : "处理失败，请重试";
     if (code === "IMAGE_INVALID") {
@@ -278,7 +262,7 @@ Page({
   },
 
   async submit() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     const draft = this._draft;
     if (!draft || !draft.frozen && !draft.audioPath || !store.isCurrentScope(draft.scope)) return;
     if (this.data.state === "UPLOADING" || this.data.state === "SAVING") return;
@@ -286,7 +270,7 @@ Page({
     const op = guard.capture();
     if (!guard.isCurrent(op)) return;
     const fid = draft.frozen ? draft.frozen.family_id : draft.scope.familyId;
-    const steps: Step[] = [
+    const steps = [
       { key: "photo", label: "上传照片", status: draft.imageToken ? "done" : "active", detail: "" },
       { key: "audio", label: "上传语音", status: draft.transcript ? "done" : "active", detail: "" },
       { key: "asr", label: "处理语音", status: draft.transcript ? "done" : "pending", detail: "" },
@@ -296,7 +280,7 @@ Page({
     try {
       if (!draft.frozen) {
         const results = await Promise.allSettled([
-          draft.imageToken ? Promise.resolve({ image_token: draft.imageToken }) : guard.run<{ image_token: string }>(op, (hooks) =>
+          draft.imageToken ? Promise.resolve({ image_token: draft.imageToken }) : guard.run(op, (hooks) =>
             uploadImage(fid, draft.photoPath, {
               isCancelled: hooks.isCancelled,
               onTask: hooks.onTask,
@@ -308,7 +292,7 @@ Page({
               },
             })
           ),
-          draft.transcript ? Promise.resolve({ transcript: draft.transcript }) : guard.run<{ transcript: string }>(op, (hooks) =>
+          draft.transcript ? Promise.resolve({ transcript: draft.transcript }) : guard.run(op, (hooks) =>
             transcribeAudio(draft.audioPath, {
               isCancelled: hooks.isCancelled,
               onTask: hooks.onTask,
@@ -335,18 +319,18 @@ Page({
         }
         if (!guard.isCurrent(op)) return;
         if (results[0].status === "fulfilled" && !draft.imageToken) {
-          draft.imageToken = (results[0].value as { image_token: string }).image_token;
+          draft.imageToken = results[0].value.image_token;
           this._setStep("photo", "done", "");
         }
         if (results[1].status === "fulfilled" && !draft.transcript) {
-          draft.transcript = (results[1].value as { transcript: string }).transcript;
+          draft.transcript = results[1].value.transcript;
           this._setStep("asr", "done", "");
         }
-        const failed = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+        const failed = results.find((r) => r.status === "rejected");
         if (failed) {
           if (results[0].status === "rejected") this._setStep("photo", "failed");
           if (results[1].status === "rejected") {
-            const audioStep = (this.data.steps as Step[]).find((s) => s.key === "audio");
+            const audioStep = this.data.steps.find((s) => s.key === "audio");
             this._setStep(audioStep && audioStep.status === "done" ? "asr" : "audio", "failed");
           }
           this.fail(failed.reason, draft);
@@ -358,7 +342,7 @@ Page({
       this.setData({ state: "SAVING", statusText: "正在入库" });
       this._setStep("judge", "active", STAGE_TEXT.queued);
       await guard.run(op, (hooks) =>
-        recordItem(fid, draft.frozen!.image_token, draft.frozen!.transcript, draft.key, {
+        recordItem(fid, draft.frozen.image_token, draft.frozen.transcript, draft.key, {
           isCancelled: hooks.isCancelled,
           onStage: (stage, detail) => {
             if (!guard.isFrameCurrent(op.generation)) return;
@@ -378,7 +362,7 @@ Page({
       this.setData({ state: "SUCCESS", processing: false, statusText: "入库完成", secondaryText: draft.frozen.transcript, steps: [] });
       this._navTimer = setTimeout(() => {
         this._navTimer = null;
-        const g = this._guard as PageScope;
+        const g = this._guard;
         if (!g.isFrameCurrent(op.generation)) return;
         wx.switchTab({ url: "/pages/home/index" });
       }, 1000);
@@ -388,13 +372,13 @@ Page({
         return;
       }
       if (!guard.isCurrent(op)) return;
-      if ((this.data.state as PageState) === "SAVING") this._setStep("judge", "failed");
+      if (this.data.state === "SAVING") this._setStep("judge", "failed");
       this.fail(err, draft);
     }
   },
 
   onRetry() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     if (!guard.isFrameCurrent(guard.frame()) || this.data.processing) return;
     if (!this._authFailed && store.user && !store.currentFamilyId) {
       wx.switchTab({ url: "/pages/home/index" });

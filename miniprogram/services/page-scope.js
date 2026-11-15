@@ -1,32 +1,22 @@
-import { ApiError } from "./api";
-import { store, Scope } from "../store/index";
+const { ApiError } = require("./api");
+const { store } = require("../store/index");
 
-export interface ScopeOperation {
-  generation: number;
-  scope: Scope;
-}
+class PageScope {
+  generation = 0;
+  visible = false;
+  tasks = new Set();
 
-export interface CancelHooks {
-  isCancelled: () => boolean;
-  onTask: (task: { abort: () => void }) => void;
-}
-
-export class PageScope {
-  private generation = 0;
-  private visible = false;
-  private tasks = new Set<{ abort: () => void }>();
-
-  show(): number {
+  show() {
     this.visible = true;
     return this.invalidate();
   }
 
-  hide(): void {
+  hide() {
     this.visible = false;
     this.invalidate();
   }
 
-  invalidate(): number {
+  invalidate() {
     this.generation += 1;
     const stale = Array.from(this.tasks);
     this.tasks.clear();
@@ -38,32 +28,32 @@ export class PageScope {
     return this.generation;
   }
 
-  frame(): number {
+  frame() {
     return this.generation;
   }
 
-  isFrameCurrent(frame: number): boolean {
+  isFrameCurrent(frame) {
     return this.visible && this.generation === frame;
   }
 
-  capture(): ScopeOperation {
+  capture() {
     return { generation: this.generation, scope: store.captureScope() };
   }
 
-  isCurrent(op: ScopeOperation): boolean {
+  isCurrent(op) {
     return this.isFrameCurrent(op.generation) && store.isCurrentScope(op.scope);
   }
 
-  scopeChanged(op: ScopeOperation): boolean {
+  scopeChanged(op) {
     return this.isFrameCurrent(op.generation) && !store.isCurrentScope(op.scope);
   }
 
-  async run<T>(op: ScopeOperation, send: (hooks: CancelHooks) => Promise<T>): Promise<T> {
+  async run(op, send) {
     if (!this.isCurrent(op)) {
       throw new ApiError({ code: "CANCELLED", message: "请求已取消", retryable: false });
     }
-    let current: { abort: () => void } | null = null;
-    const hooks: CancelHooks = {
+    let current = null;
+    const hooks = {
       isCancelled: () => !this.isCurrent(op),
       onTask: (task) => {
         if (!this.isCurrent(op)) {
@@ -86,3 +76,5 @@ export class PageScope {
     }
   }
 }
+
+module.exports = { PageScope };

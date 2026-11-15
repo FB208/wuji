@@ -1,43 +1,35 @@
 /** P02 首页：家庭组、收起来、找东西、最近记录（文档 8.1）。 */
-import { request, ApiError } from "../../services/api";
-import { ensureLogin, refreshMe } from "../../services/auth";
-import { PageScope, ScopeOperation } from "../../services/page-scope";
-import { store, Scope } from "../../store/index";
-import { formatTime } from "../../utils/format";
-
-interface ItemData {
-  id: number;
-  name: string;
-  location_text: string;
-  image_url: string;
-  updated_at: string;
-}
+const { request, ApiError } = require("../../services/api");
+const { ensureLogin, refreshMe } = require("../../services/auth");
+const { PageScope } = require("../../services/page-scope");
+const { store } = require("../../store/index");
+const { formatTime } = require("../../utils/format");
 
 Page({
   data: {
     familyName: "",
-    recentItems: [] as any[],
+    recentItems: [],
     loaded: false,
     ready: false,
     busy: false,
     noFamily: false,
     errorText: "",
   },
-  _guard: null as PageScope | null,
-  _sessionScope: null as Scope | null,
-  _listOp: null as ScopeOperation | null,
+  _guard: null,
+  _sessionScope: null,
+  _listOp: null,
   _authFailed: false,
 
   onLoad() {
     this._guard = new PageScope();
   },
   onShow() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     guard.show();
     this.activate();
   },
   async activate() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     const oldSession = this._sessionScope;
     this._authFailed = false;
     this._listOp = null;
@@ -81,14 +73,14 @@ Page({
     await this.loadRecent(scope);
   },
   onHide() {
-    (this._guard as PageScope).hide();
+    this._guard.hide();
   },
   onUnload() {
     this.onHide();
   },
 
-  active(): boolean {
-    const guard = this._guard as PageScope;
+  active() {
+    const guard = this._guard;
     return (
       !!guard &&
       guard.isFrameCurrent(guard.frame()) &&
@@ -99,8 +91,8 @@ Page({
     );
   },
 
-  async loadRecent(scope: Scope): Promise<ScopeOperation | null> {
-    const guard = this._guard as PageScope;
+  async loadRecent(scope) {
+    const guard = this._guard;
     if (!this.active() || !scope.familyId || !store.isCurrentScope(scope)) return null;
     guard.invalidate();
     const op = guard.capture();
@@ -109,8 +101,8 @@ Page({
     const family = store.currentFamily();
     this.setData({ familyName: family ? family.name : "选择家庭", errorText: "" });
     try {
-      const data = await guard.run<{ items: ItemData[] }>(op, (hooks) =>
-        request<{ items: ItemData[] }>({
+      const data = await guard.run(op, (hooks) =>
+        request({
           path: `/items?family_id=${op.scope.familyId}&page=1&page_size=3`,
           isCancelled: hooks.isCancelled,
           onTask: hooks.onTask,
@@ -156,25 +148,25 @@ Page({
   },
 
   async onPullDownRefresh() {
-    const guard = this._guard as PageScope;
-    if (!this.active() || !this._sessionScope!.familyId) {
+    const guard = this._guard;
+    if (!this.active() || !this._sessionScope.familyId) {
       if (guard.isFrameCurrent(guard.frame())) wx.stopPullDownRefresh();
       return;
     }
-    const op = await this.loadRecent(this._sessionScope as Scope);
+    const op = await this.loadRecent(this._sessionScope);
     if (op && guard.isFrameCurrent(op.generation)) {
       wx.stopPullDownRefresh();
     }
   },
   onRetry() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     if (!guard.isFrameCurrent(guard.frame())) return;
     if (this._authFailed || !this._sessionScope || !store.isCurrentScope(this._sessionScope)) {
       if (!this.data.busy) this.activate();
       return;
     }
     if (!this.active()) return;
-    this.loadRecent(this._sessionScope as Scope);
+    this.loadRecent(this._sessionScope);
   },
   onSwitchFamily() {
     if (!this.active()) return;
@@ -182,7 +174,7 @@ Page({
   },
   goRecord() {
     if (!this.active()) return;
-    if (!this._sessionScope!.familyId) {
+    if (!this._sessionScope.familyId) {
       this.goProfile();
       return;
     }
@@ -190,20 +182,20 @@ Page({
   },
   goSearch() {
     if (!this.active()) return;
-    if (!this._sessionScope!.familyId) {
+    if (!this._sessionScope.familyId) {
       this.goProfile();
       return;
     }
     wx.navigateTo({ url: "/pages/search/index" });
   },
-  onItemTap(e: WechatMiniprogram.CustomEvent) {
+  onItemTap(e) {
     if (!this.active()) return;
     const item = e.detail.item;
     if (!item || !this.data.recentItems.some((i) => i.id === item.id)) return;
     wx.navigateTo({ url: `/pages/item-detail/index?id=${item.id}` });
   },
   goProfile() {
-    if (!this.active() || !this._sessionScope!.userId) return;
+    if (!this.active() || !this._sessionScope.userId) return;
     wx.switchTab({ url: "/pages/profile/index" });
   },
 });

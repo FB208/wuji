@@ -1,4 +1,3 @@
-import ts from "typescript";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,19 +8,15 @@ export const MP_DIR = path.resolve(
 );
 
 function normalizeKey(p) {
-  return p.replace(/\\/g, "/").replace(/\.ts$/i, "");
+  return p.replace(/\\/g, "/").replace(/\.(ts|js)$/i, "");
 }
 
 function resolveImport(fromFile, spec) {
   return normalizeKey(path.resolve(path.dirname(fromFile), spec));
 }
 
-export function loadTsModule(absPath, { mocks = {}, globals = {} } = {}) {
-  const src = fs.readFileSync(absPath, "utf8");
-  const js = ts.transpileModule(src, {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2019 },
-    fileName: absPath,
-  }).outputText;
+export function loadModule(absPath, { mocks = {}, globals = {} } = {}) {
+  const js = fs.readFileSync(absPath, "utf8");
   const module = { exports: {} };
   const req = (spec) => {
     const key = resolveImport(absPath, spec);
@@ -107,7 +102,7 @@ export function mockWx(overrides = {}) {
     uploadFile: () => {},
     login: () => {},
     getSetting: async () => ({ authSetting: {} }),
-    authorize: async () => {},
+    authorize: async () => ({}),
     ...overrides,
   };
 }

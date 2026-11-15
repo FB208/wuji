@@ -1,51 +1,16 @@
 /** P04 查找物品：语音多轮查找 + 文字降级（文档 5 章 / 8.3）。 */
-import { uploadFile, request, ApiError } from "../../services/api";
-import { ensureLogin, refreshMe } from "../../services/auth";
-import { PageScope, ScopeOperation } from "../../services/page-scope";
-import { store, Scope } from "../../store/index";
-import { bindNotice, registerNotice, showNotice } from "../../services/notice";
+const { uploadFile, request, ApiError } = require("../../services/api");
+const { ensureLogin, refreshMe } = require("../../services/auth");
+const { PageScope } = require("../../services/page-scope");
+const { store } = require("../../store/index");
+const { bindNotice, registerNotice, showNotice } = require("../../services/notice");
 
-interface SearchItem {
-  id: number;
-  name: string;
-  location_text: string;
-  image_url: string;
-}
+// _pending: { kind: "text", query, scope, context } | { kind: "audio", filePath, scope, context } | null
+// state: "ready" | "searching" | "found" | "multiple" | "not_found" | "error"
 
-interface SearchTurn {
-  query: string;
-  status?: string | null;
-  item_ids?: number[];
-}
-
-interface SearchContext {
-  family_id?: number;
-  initial_query?: string | null;
-  turns?: SearchTurn[];
-  shown_item_ids?: number[];
-  excluded_item_ids?: number[];
-  last_item_ids?: number[];
-  last_status?: string | null;
-}
-
-interface SearchResult {
-  transcript: string | null;
-  status: "found" | "multiple" | "not_found";
-  prompt: string | null;
-  items: SearchItem[];
-  context: SearchContext;
-}
-
-type Pending =
-  | { kind: "text"; query: string; scope: Scope; context: SearchContext }
-  | { kind: "audio"; filePath: string; scope: Scope; context: SearchContext }
-  | null;
-
-type UiState = "ready" | "searching" | "found" | "multiple" | "not_found" | "error";
-
-function freezeCopy<T>(value: T): T {
+function freezeCopy(value) {
   const copy = JSON.parse(JSON.stringify(value));
-  const freeze = (part: any): void => {
+  const freeze = (part) => {
     if (part && typeof part === "object") {
       Object.values(part).forEach(freeze);
       Object.freeze(part);
@@ -57,23 +22,23 @@ function freezeCopy<T>(value: T): T {
 
 Page({
   data: {
-    notice: null as any,
-    state: "ready" as UiState,
+    notice: null,
+    state: "ready",
     ready: false,
     busy: false,
     noFamily: false,
-    items: [] as SearchItem[],
+    items: [],
     prompt: "",
     lastQuery: "",
     showTextInput: false,
     textQuery: "",
-    context: null as SearchContext | null,
+    context: null,
   },
   // 对话上下文只保存在页面内存中（文档 5.5）
-  _guard: null as PageScope | null,
-  _sessionScope: null as Scope | null,
-  _resultScope: null as Scope | null,
-  _pending: null as Pending,
+  _guard: null,
+  _sessionScope: null,
+  _resultScope: null,
+  _pending: null,
   _authFailed: false,
 
   onLoad() {
@@ -81,12 +46,12 @@ Page({
   },
   onShow() {
     registerNotice(bindNotice(this));
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     guard.show();
     this.resumeAuth();
   },
   async resumeAuth() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     if (!guard.isFrameCurrent(guard.frame())) return;
     const frame = guard.frame();
     const recoveringAuth = this._authFailed;
@@ -153,9 +118,9 @@ Page({
   },
   onHide() {
     registerNotice(null);
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     guard.hide();
-    const holder = (this as any).selectComponent && (this as any).selectComponent("#h2t");
+    const holder = this.selectComponent && this.selectComponent("#h2t");
     if (holder && holder.interrupt) holder.interrupt();
   },
   // 离开页面即结束本次对话
@@ -165,18 +130,18 @@ Page({
     this._resultScope = null;
   },
 
-  session(): Scope | null {
-    const guard = this._guard as PageScope;
+  session() {
+    const guard = this._guard;
     if (!guard || !guard.isFrameCurrent(guard.frame())) return null;
     return this.data.ready && !this.data.busy && this._sessionScope && store.isCurrentScope(this._sessionScope)
       ? this._sessionScope : null;
   },
 
   onClear() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     if (!guard.isFrameCurrent(guard.frame())) return;
     guard.invalidate();
-    const holder = (this as any).selectComponent && (this as any).selectComponent("#h2t");
+    const holder = this.selectComponent && this.selectComponent("#h2t");
     if (holder && holder.interrupt) holder.interrupt();
     this._pending = null;
     this._resultScope = null;
@@ -198,7 +163,7 @@ Page({
     this.setData({ showTextInput: true });
     showNotice("麦克风不可用，可输入文字查找");
   },
-  onRecordError(e: WechatMiniprogram.CustomEvent) {
+  onRecordError(e) {
     if (!this.session() || this.data.state === "searching") return;
     showNotice(e.detail.message || "录音失败，请重试");
   },
@@ -206,7 +171,7 @@ Page({
     if (!this.session() || this.data.state === "searching") return;
     this.setData({ showTextInput: !this.data.showTextInput });
   },
-  onTextInput(e: WechatMiniprogram.Input) {
+  onTextInput(e) {
     if (!this.session() || this.data.state === "searching") return;
     this.setData({ textQuery: e.detail.value });
   },
@@ -222,14 +187,14 @@ Page({
     this.submitText(query);
   },
 
-  buildContext(): SearchContext {
+  buildContext() {
     const ctx = this.data.context;
     if (this._resultScope && ctx && this._sessionScope && store.isCurrentScope(this._resultScope)) {
       return JSON.parse(JSON.stringify(ctx));
     }
     return { family_id: this._sessionScope ? this._sessionScope.familyId : 0 };
   },
-  applyResult(query: string, result: SearchResult, op: ScopeOperation) {
+  applyResult(query, result, op) {
     this._resultScope = op.scope;
     this._pending = null;
     this.setData({
@@ -240,8 +205,8 @@ Page({
       context: result.context ? JSON.parse(JSON.stringify(result.context)) : null,
     });
   },
-  handleScopeChanged(op: ScopeOperation): boolean {
-    const guard = this._guard as PageScope;
+  handleScopeChanged(op) {
+    const guard = this._guard;
     if (!guard.scopeChanged(op)) return false;
     guard.invalidate();
     const scope = store.captureScope();
@@ -262,9 +227,9 @@ Page({
     });
     return true;
   },
-  async handleError(err: unknown, op: ScopeOperation) {
+  async handleError(err, op) {
     if (this.handleScopeChanged(op)) return;
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     if (!guard.isCurrent(op)) return;
     if (err instanceof ApiError && err.statusCode === 403) {
       try {
@@ -280,28 +245,28 @@ Page({
     this.setData({ state: "error", prompt: message });
   },
 
-  submitText(query: string) {
+  submitText(query) {
     const session = this.session();
     if (!session || this.data.state === "searching") return;
     if (!query.trim() || query.length > 512) return;
     const context = this.buildContext();
-    this._pending = freezeCopy<Exclude<Pending, null>>({ kind: "text", query, scope: session, context });
+    this._pending = freezeCopy({ kind: "text", query, scope: session, context });
     this.runPending(this._pending);
   },
-  onRecordFinish(e: WechatMiniprogram.CustomEvent) {
+  onRecordFinish(e) {
     if (!this.session() || this.data.busy || !this.data.ready) return;
     if (this.data.state === "searching") return;
-    if (!this._sessionScope!.familyId) {
+    if (!this._sessionScope.familyId) {
       this.setData({ noFamily: true });
       return;
     }
     const context = this.buildContext();
     if (typeof e.detail.tempFilePath !== "string" || !e.detail.tempFilePath) return;
-    this._pending = freezeCopy<Exclude<Pending, null>>({ kind: "audio", filePath: e.detail.tempFilePath, scope: this._sessionScope!, context });
+    this._pending = freezeCopy({ kind: "audio", filePath: e.detail.tempFilePath, scope: this._sessionScope, context });
     this.runPending(this._pending);
   },
-  async runPending(p: Exclude<Pending, null>) {
-    const guard = this._guard as PageScope;
+  async runPending(p) {
+    const guard = this._guard;
     if (!this.session() || this.data.state === "searching" || !store.isCurrentScope(p.scope)) return;
     guard.invalidate();
     const op = guard.capture();
@@ -311,9 +276,9 @@ Page({
     const context = freezeCopy(p.context);
     this.setData({ state: "searching" });
     try {
-      const result = await guard.run<SearchResult>(op, (hooks) => {
+      const result = await guard.run(op, (hooks) => {
         if (p.kind === "text") {
-          return request<SearchResult>({
+          return request({
             path: "/items/search/text",
             method: "POST",
             data: {
@@ -325,7 +290,7 @@ Page({
             onTask: hooks.onTask,
           });
         }
-        return uploadFile<SearchResult>({
+        return uploadFile({
           path: "/items/search/audio",
           filePath: p.filePath,
           name: "audio",
@@ -344,14 +309,14 @@ Page({
       await this.handleError(err, op);
     }
   },
-  onExclude(e: WechatMiniprogram.CustomEvent) {
+  onExclude(e) {
     if (!this.session() || !this._resultScope || !store.isCurrentScope(this._resultScope) || this.data.state === "searching") return;
     const id = Number(e.currentTarget.dataset.id);
     const shown = this.data.items.map((i) => i.id);
     if (!Number.isSafeInteger(id) || id <= 0 || !shown.includes(id)) return;
     const ctx = this.data.context || {};
     const excluded = Array.from(new Set([...(ctx.excluded_item_ids || []), id]));
-    const newCtx: SearchContext = {
+    const newCtx = {
       ...JSON.parse(JSON.stringify(ctx)),
       excluded_item_ids: excluded,
     };
@@ -359,7 +324,7 @@ Page({
     this.submitText("继续查找");
   },
   onRetry() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     if (!guard.isFrameCurrent(guard.frame()) || this.data.busy || this.data.state === "searching") return;
     if (this._authFailed || !this._sessionScope) {
       this.resumeAuth();
@@ -374,14 +339,14 @@ Page({
     if (!store.isCurrentScope(pending.scope)) return;
     this.runPending(pending);
   },
-  onItemTap(e: WechatMiniprogram.CustomEvent) {
+  onItemTap(e) {
     if (!this.session() || !this._resultScope || !store.isCurrentScope(this._resultScope)) return;
     const item = e.detail.item;
     if (!item || !this.data.items.some((i) => i.id === item.id)) return;
     wx.navigateTo({ url: `/pages/item-detail/index?id=${item.id}` });
   },
   goHome() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     if (!guard.isFrameCurrent(guard.frame()) || this.data.busy || !this._sessionScope || !store.isCurrentScope(this._sessionScope)) return;
     wx.switchTab({ url: "/pages/home/index" });
   },

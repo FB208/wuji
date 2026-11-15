@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { loadTsModule, mockWx, MP_DIR } from "./helpers/loader.mjs";
+import { loadModule, mockWx, MP_DIR } from "./helpers/loader.mjs";
 
-const STORE_PATH = path.join(MP_DIR, "store/index.ts");
+const STORE_PATH = path.join(MP_DIR, "store/index.js");
 
 function loadStore() {
-  return loadTsModule(STORE_PATH, { globals: { wx: mockWx() } }).store;
+  return loadModule(STORE_PATH, { globals: { wx: mockWx() } }).store;
 }
 
 test("store: setCurrentFamily 写入 id，currentFamily 只认列表内家庭", () => {

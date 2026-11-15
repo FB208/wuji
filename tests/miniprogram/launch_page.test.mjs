@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { loadTsModule, mockWx, makePage, MP_DIR } from "./helpers/loader.mjs";
+import { loadModule, mockWx, makePage, MP_DIR } from "./helpers/loader.mjs";
 const K = (s) => MP_DIR.replaceAll(path.sep, "/") + "/" + s;
-const PAGE = path.join(MP_DIR, "pages/launch/index.ts");
+const PAGE = path.join(MP_DIR, "pages/launch/index.js");
 function deferred() { let r, rej; const p = new Promise((res, j) => { r = res; rej = j; }); return { p, resolve: r, reject: rej }; }
 async function flush(n = 10) { for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0)); }
 function env(overrides = {}) {
@@ -18,17 +18,17 @@ function env(overrides = {}) {
     reLaunch: (o) => calls.relaunches.push(o.url),
     switchTab: (o) => calls.switchTabOpts.push(o),
   });
-  const storeMod = loadTsModule(K("store/index.ts"), { globals: { wx: wxBase } });
+  const storeMod = loadModule(K("store/index.js"), { globals: { wx: wxBase } });
   const store = storeMod.store;
   const apiMod = {
     ApiError: class extends Error { constructor(b, sc = 0) { super(b.message); this.code = b.code; this.retryable = b.retryable; this.statusCode = sc; } },
   };
-  const scopeMod = loadTsModule(K("services/page-scope.ts"), { globals: {}, mocks: { [K("store/index")]: storeMod, [K("services/api")]: apiMod } });
+  const scopeMod = loadModule(K("services/page-scope.js"), { globals: {}, mocks: { [K("store/index")]: storeMod, [K("services/api")]: apiMod } });
   const authMod = {
     ensureLogin: (opts) => { calls.login.push(opts && opts.interactive === true ? true : false); return overrides.ensureLogin ? overrides.ensureLogin(store, opts) : Promise.resolve(); },
   };
   let def;
-  loadTsModule(PAGE, {
+  loadModule(PAGE, {
     globals: { wx: wxBase, Page: (d) => { def = d; } },
     mocks: {
       [K("services/api")]: apiMod, [K("services/auth")]: authMod,

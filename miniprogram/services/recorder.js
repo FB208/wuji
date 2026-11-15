@@ -1,31 +1,12 @@
 /** 录音封装：按住说话，1～60 秒，mp3 格式（文档 1.4 / 11.3）。 */
 
-export interface RecordResult {
-  tempFilePath: string;
-  durationMs: number;
-}
-
 const MIN_DURATION_MS = 1000;
 const MAX_DURATION_MS = 60000;
 const STOP_WATCHDOG_MS = 5000;
 
-type StopReason = "submit" | "cancel";
-
-interface Session {
-  promise: Promise<RecordResult | null>;
-  resolve: (r: RecordResult | null) => void;
-  reject: (e: Error) => void;
-  startedAt: number | null;
-  reason: StopReason;
-  settled: boolean;
-  awaitingAck: boolean;
-  watchdog: ReturnType<typeof setTimeout> | null;
-  onStarted?: () => void;
-}
-
 class Recorder {
-  private manager = wx.getRecorderManager();
-  private session: Session | null = null;
+  manager = wx.getRecorderManager();
+  session = null;
 
   constructor() {
     this.manager.onStart(() => {
@@ -77,7 +58,7 @@ class Recorder {
     });
   }
 
-  private finish(s: Session) {
+  finish(s) {
     s.settled = true;
     if (s.watchdog !== null) {
       clearTimeout(s.watchdog);
@@ -85,7 +66,7 @@ class Recorder {
     }
   }
 
-  private requestStop(s: Session, cancel: boolean) {
+  requestStop(s, cancel) {
     if (cancel) s.reason = "cancel";
     if (s.awaitingAck) return;
     s.awaitingAck = true;
@@ -104,7 +85,7 @@ class Recorder {
   }
 
   /** 请求麦克风权限；被拒绝时返回 false（页面提供文字降级，文档 14.1）。 */
-  async requestPermission(): Promise<boolean> {
+  async requestPermission() {
     try {
       const setting = await wx.getSetting();
       if (setting.authSetting["scope.record"]) return true;
@@ -116,17 +97,17 @@ class Recorder {
     }
   }
 
-  start(onStarted?: () => void): Promise<RecordResult | null> {
+  start(onStarted) {
     if (this.session && (!this.session.settled || this.session.awaitingAck)) {
       return Promise.reject(new Error("上一段录音尚未结束"));
     }
-    let resolveFn: (r: RecordResult | null) => void = () => {};
-    let rejectFn: (e: Error) => void = () => {};
-    const promise = new Promise<RecordResult | null>((resolve, reject) => {
+    let resolveFn = () => {};
+    let rejectFn = () => {};
+    const promise = new Promise((resolve, reject) => {
       resolveFn = resolve;
       rejectFn = reject;
     });
-    const session: Session = {
+    const session = {
       promise,
       resolve: resolveFn,
       reject: rejectFn,
@@ -154,7 +135,7 @@ class Recorder {
   }
 
   /** 结束录音。cancel=true 表示上滑取消，不提交。 */
-  stop(cancel = false, expectedPromise?: Promise<RecordResult | null>): Promise<RecordResult | null> {
+  stop(cancel = false, expectedPromise) {
     const s = this.session;
     if (!s) return Promise.resolve(null);
     if (expectedPromise && expectedPromise !== s.promise) return Promise.resolve(null);
@@ -164,4 +145,6 @@ class Recorder {
   }
 }
 
-export const recorder = new Recorder();
+const recorder = new Recorder();
+
+module.exports = { recorder };

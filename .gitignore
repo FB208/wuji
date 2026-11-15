@@ -6,4 +6,3 @@ backend/logs/
 __pycache__/
 *.pyc
 doc_extracted.txt
-miniprogram/**/*.js

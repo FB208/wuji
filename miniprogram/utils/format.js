@@ -1,5 +1,5 @@
 /** 时间显示工具。 */
-export function formatTime(iso: string | null | undefined): string {
+function formatTime(iso) {
   if (!iso) return "";
   const date = new Date(iso);
   if (isNaN(date.getTime())) return "";
@@ -12,6 +12,8 @@ export function formatTime(iso: string | null | undefined): string {
   if (diffMs < hour) return `${Math.floor(diffMs / minute)} 分钟前`;
   if (diffMs < day) return `${Math.floor(diffMs / hour)} 小时前`;
   if (diffMs < 30 * day) return `${Math.floor(diffMs / day)} 天前`;
-  const pad = (n: number) => String(n).padStart(2, "0");
+  const pad = (n) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
+
+module.exports = { formatTime };

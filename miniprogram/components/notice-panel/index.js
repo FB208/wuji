@@ -14,12 +14,12 @@ Component({
     inputValue: "",
   },
   observers: {
-    visible(v: boolean) {
+    visible(v) {
       if (v) this.setData({ inputValue: "" });
     },
   },
   methods: {
-    onInput(e: WechatMiniprogram.Input) {
+    onInput(e) {
       this.setData({ inputValue: e.detail.value });
     },
     onConfirm() {

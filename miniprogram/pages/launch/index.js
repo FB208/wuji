@@ -1,8 +1,8 @@
 /** P01 启动与登录：登录完成后进入首页（文档 3.2 / 7.1）。 */
-import { ApiError } from "../../services/api";
-import { ensureLogin } from "../../services/auth";
-import { PageScope } from "../../services/page-scope";
-import { store } from "../../store/index";
+const { ApiError } = require("../../services/api");
+const { ensureLogin } = require("../../services/auth");
+const { PageScope } = require("../../services/page-scope");
+const { store } = require("../../store/index");
 
 Page({
   data: {
@@ -10,28 +10,28 @@ Page({
     busy: false,
     errorText: "",
   },
-  _guard: null as PageScope | null,
+  _guard: null,
   _navigating: false,
 
   onLoad() {
     this._guard = new PageScope();
   },
   onShow() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     guard.show();
     this._navigating = false;
     this.setData({ busy: false });
     this.login(false);
   },
   onHide() {
-    (this._guard as PageScope).hide();
+    this._guard.hide();
     this._navigating = false;
   },
   onUnload() {
     this.onHide();
   },
-  async login(interactive: boolean) {
-    const guard = this._guard as PageScope;
+  async login(interactive) {
+    const guard = this._guard;
     if (!guard || !guard.isFrameCurrent(guard.frame()) || this.data.busy || this._navigating) return;
     guard.invalidate();
     const frame = guard.frame();
@@ -49,7 +49,7 @@ Page({
       wx.switchTab({
         url: "/pages/home/index",
         fail: () => {
-          const g = this._guard as PageScope;
+          const g = this._guard;
           if (!g.isFrameCurrent(frame)) return;
           this._navigating = false;
           this.setData({ busy: false, failed: true, errorText: "登录失败，请重试" });
@@ -62,7 +62,7 @@ Page({
     }
   },
   onRetry() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     if (!guard || !guard.isFrameCurrent(guard.frame()) || this.data.busy || this._navigating) return;
     this.login(true);
   },

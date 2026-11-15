@@ -2,10 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import fs from "node:fs";
-import { loadTsModule, mockWx, makePage, MP_DIR, noticeMock } from "./helpers/loader.mjs";
+import { loadModule, mockWx, makePage, MP_DIR, noticeMock } from "./helpers/loader.mjs";
 const K = (s) => MP_DIR.replaceAll(path.sep, "/") + "/" + s;
-const DT = path.join(MP_DIR, "pages/item-detail/index.ts");
-const ED = path.join(MP_DIR, "pages/item-edit/index.ts");
+const DT = path.join(MP_DIR, "pages/item-detail/index.js");
+const ED = path.join(MP_DIR, "pages/item-edit/index.js");
 function deferred() { let r, rej; const p = new Promise((res, j) => { r = res; rej = j; }); return { p, resolve: r, reject: rej }; }
 async function flush(n = 12) { for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0)); }
 function makeClock() {
@@ -32,7 +32,7 @@ function env(overrides = {}, query = { id: "5" }, pagePath = DT) {
     showModal: (o) => { calls.modals.push(o); if (overrides.modal) overrides.modal(o); },
     chooseMedia: (o) => { if (overrides.chooseMedia) overrides.chooseMedia(o); },
   });
-  const storeMod = loadTsModule(K("store/index.ts"), { globals: { wx: wxBase } });
+  const storeMod = loadModule(K("store/index.js"), { globals: { wx: wxBase } });
   const store = storeMod.store;
   if (!overrides.cold) {
     store.applyMe({ id: 1 }, [{ id: 10, name: "f", owner_user_id: 1, role: "owner" }]);
@@ -47,7 +47,7 @@ function env(overrides = {}, query = { id: "5" }, pagePath = DT) {
       return overrides.request ? overrides.request(o) : Promise.resolve({ id: 5, name: "a", location_text: "l", record_text: "r", image_url: "u", version: 7, updated_at: 0 });
     },
   };
-  const scopeMod = loadTsModule(K("services/page-scope.ts"), { globals: {}, mocks: { [K("store/index")]: storeMod, [K("services/api")]: apiMod } });
+  const scopeMod = loadModule(K("services/page-scope.js"), { globals: {}, mocks: { [K("store/index")]: storeMod, [K("services/api")]: apiMod } });
   const authMod = {
     ensureLogin: () => { calls.login++; return overrides.ensureLogin ? overrides.ensureLogin(store) : Promise.resolve(); },
     refreshMe: () => { calls.me++; return overrides.refreshMe ? overrides.refreshMe(store) : Promise.resolve({ user: store.user, families: store.families }); },
@@ -58,7 +58,7 @@ function env(overrides = {}, query = { id: "5" }, pagePath = DT) {
     return overrides.upload ? overrides.upload({ fid, p, opts }) : Promise.resolve({ image_token: "tok1" });
   } };
   let def;
-  loadTsModule(pagePath, {
+  loadModule(pagePath, {
     globals: { wx: wxBase, Page: (d) => { def = d; }, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout, getCurrentPages: () => overrides.singlePage ? [] : [{}, {}] },
     mocks: {
       [K("services/api")]: apiMod, [K("services/auth")]: authMod,

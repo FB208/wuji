@@ -1,17 +1,6 @@
 /** 登录：wx.login 换取应用令牌，首次登录后端自动创建“我的家”（文档 7.1）。 */
-import { ApiError, clearToken, getToken, registerAuthRecovery, request, setToken } from "./api";
-import { store, FamilyInfo, UserInfo } from "../store/index";
-
-interface LoginData {
-  access_token: string;
-  user: UserInfo;
-  current_family_id: number;
-}
-
-interface MeData {
-  user: UserInfo;
-  families: FamilyInfo[];
-}
+const { ApiError, clearToken, getToken, registerAuthRecovery, request, setToken } = require("./api");
+const { store } = require("../store/index");
 
 const BLOCKED_KEY = "wuji_login_blocked";
 
@@ -19,19 +8,19 @@ let meSeq = 0;
 let loginSeq = 0;
 let blockedInMemory = false;
 
-export function blockAutoLogin() {
+function blockAutoLogin() {
   blockedInMemory = true;
   loginSeq += 1;
   meSeq += 1;
   wx.setStorageSync(BLOCKED_KEY, true);
 }
 
-export function unblockAutoLogin() {
+function unblockAutoLogin() {
   wx.removeStorageSync(BLOCKED_KEY);
   blockedInMemory = false;
 }
 
-function isBlocked(): boolean {
+function isBlocked() {
   try {
     return blockedInMemory || !!wx.getStorageSync(BLOCKED_KEY);
   } catch (_) {
@@ -39,12 +28,12 @@ function isBlocked(): boolean {
   }
 }
 
-function authCancelled(): ApiError {
+function authCancelled() {
   return new ApiError({ code: "CANCELLED", message: "登录状态已变化，请重试", retryable: false });
 }
 
-function identityChanged(): ApiError {
-  let lastErr: unknown = null;
+function identityChanged() {
+  let lastErr = null;
   try {
     blockAutoLogin();
   } catch (e) {
@@ -64,7 +53,7 @@ function identityChanged(): ApiError {
   return new ApiError({ code: "LOGIN_BLOCKED", message: "登录身份已变化，请点击重新登录", retryable: false });
 }
 
-export function wxLogin(allowRegistration = false): Promise<LoginData> {
+function wxLogin(allowRegistration = false) {
   const seq = ++loginSeq;
   const userId = store.user ? store.user.id : 0;
   return new Promise((resolve, reject) => {
@@ -75,7 +64,7 @@ export function wxLogin(allowRegistration = false): Promise<LoginData> {
           return;
         }
         try {
-          const data = await request<LoginData>({
+          const data = await request({
             path: "/auth/wechat-login",
             method: "POST",
             data: { code: res.code, allow_registration: allowRegistration },
@@ -111,12 +100,12 @@ export function wxLogin(allowRegistration = false): Promise<LoginData> {
 }
 
 /** 拉取当前用户与家庭组列表并写入全局状态。 */
-export async function refreshMe(skipAuthRecovery = false, preferredFamilyId?: number): Promise<MeData> {
+async function refreshMe(skipAuthRecovery = false, preferredFamilyId) {
   const seq = ++meSeq;
   const epoch = store.user ? store.user.id : 0;
   const token = getToken();
   const scope = store.captureScope();
-  const data = await request<MeData>({ path: "/me", skipAuthRecovery });
+  const data = await request({ path: "/me", skipAuthRecovery });
   if (seq !== meSeq || token !== getToken() || epoch !== (store.user ? store.user.id : 0)) {
     throw authCancelled();
   }
@@ -139,7 +128,7 @@ export async function refreshMe(skipAuthRecovery = false, preferredFamilyId?: nu
   return data;
 }
 
-export async function refreshCredentials(): Promise<boolean> {
+async function refreshCredentials() {
   if (isBlocked()) return false;
   const prevUserId = store.user ? store.user.id : 0;
   if (!prevUserId) return false;
@@ -154,12 +143,12 @@ export async function refreshCredentials(): Promise<boolean> {
   }
 }
 
-export function installAuthRecovery() {
+function installAuthRecovery() {
   registerAuthRecovery(refreshCredentials);
 }
 
 /** 确保已登录：有令牌则校验，无令牌或失效则重新登录。 */
-export async function ensureLogin(options: { interactive?: boolean } = {}): Promise<void> {
+async function ensureLogin(options = {}) {
   if (options.interactive) unblockAutoLogin();
   store.restore();
   if (isBlocked()) {
@@ -188,3 +177,13 @@ export async function ensureLogin(options: { interactive?: boolean } = {}): Prom
     throw authCancelled();
   }
 }
+
+module.exports = {
+  blockAutoLogin,
+  unblockAutoLogin,
+  wxLogin,
+  refreshMe,
+  refreshCredentials,
+  installAuthRecovery,
+  ensureLogin,
+};

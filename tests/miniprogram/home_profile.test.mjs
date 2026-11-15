@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { loadTsModule, mockWx, makePage, MP_DIR } from "./helpers/loader.mjs";
+import { loadModule, mockWx, makePage, MP_DIR } from "./helpers/loader.mjs";
 const K = (s) => MP_DIR.replaceAll(path.sep, "/") + "/" + s;
-const HOME = path.join(MP_DIR, "pages/home/index.ts");
-const PROF = path.join(MP_DIR, "pages/profile/index.ts");
-const FLIST = path.join(MP_DIR, "pages/family-list/index.ts");
+const HOME = path.join(MP_DIR, "pages/home/index.js");
+const PROF = path.join(MP_DIR, "pages/profile/index.js");
+const FLIST = path.join(MP_DIR, "pages/family-list/index.js");
 function deferred() { let r; const p = new Promise((res) => { r = res; }); return { p, resolve: r }; }
 async function flush(n = 10) { for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0)); }
 function env(overrides = {}, pagePath = HOME) {
@@ -23,7 +23,7 @@ function env(overrides = {}, pagePath = HOME) {
     stopPullDownRefresh: () => { calls.stopPull++; },
     showModal: (o) => { calls.modals.push(o); if (overrides.modal) overrides.modal(o); },
   });
-  const storeMod = loadTsModule(K("store/index.ts"), { globals: { wx: wxBase } });
+  const storeMod = loadModule(K("store/index.js"), { globals: { wx: wxBase } });
   const store = storeMod.store;
   if (!overrides.cold) {
     store.applyMe({ id: 1 }, [{ id: 10, name: "f", owner_user_id: 1, role: "owner" }]);
@@ -36,13 +36,13 @@ function env(overrides = {}, pagePath = HOME) {
       return overrides.request ? overrides.request(o) : Promise.resolve({ items: [{ id: 1, name: "a", updated_at: 0 }], total: 1 });
     },
   };
-  const scopeMod = loadTsModule(K("services/page-scope.ts"), { globals: {}, mocks: { [K("store/index")]: storeMod, [K("services/api")]: apiMod } });
+  const scopeMod = loadModule(K("services/page-scope.js"), { globals: {}, mocks: { [K("store/index")]: storeMod, [K("services/api")]: apiMod } });
   const authMod = {
     ensureLogin: () => { calls.login++; return overrides.ensureLogin ? overrides.ensureLogin() : Promise.resolve(); },
     refreshMe: (skip, pref) => { store.applyMe(store.user || { id: 1 }, store.families.length ? store.families : [{ id: 10, name: "f", owner_user_id: 1, role: "owner" }], pref); return Promise.resolve({ user: store.user, families: store.families }); },
   };
   let def;
-  loadTsModule(pagePath, {
+  loadModule(pagePath, {
     globals: { wx: wxBase, Page: (d) => { def = d; } },
     mocks: {
       [K("services/api")]: apiMod,

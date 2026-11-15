@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { loadTsModule, mockWx, makePage, MP_DIR, noticeMock } from "./helpers/loader.mjs";
+import { loadModule, mockWx, makePage, MP_DIR, noticeMock } from "./helpers/loader.mjs";
 const K = (s) => MP_DIR.replaceAll(path.sep, "/") + "/" + s;
-const PAGE = path.join(MP_DIR, "pages/family/index.ts");
+const PAGE = path.join(MP_DIR, "pages/family/index.js");
 function deferred() { let r, rej; const p = new Promise((res, j) => { r = res; rej = j; }); return { p, resolve: r, reject: rej }; }
 async function flush(n = 12) { for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0)); }
 function env(overrides = {}) {
@@ -24,7 +24,7 @@ function env(overrides = {}) {
     showShareMenu: () => { calls.shareMenu++; },
     hideShareMenu: () => {},
   });
-  const storeMod = loadTsModule(K("store/index.ts"), { globals: { wx: wxBase } });
+  const storeMod = loadModule(K("store/index.js"), { globals: { wx: wxBase } });
   const store = storeMod.store;
   if (!overrides.cold) {
     store.applyMe({ id: 1 }, [{ id: 10, name: "f", owner_user_id: overrides.member ? 9 : 1, role: overrides.member ? "member" : "owner" }]);
@@ -39,13 +39,13 @@ function env(overrides = {}) {
       return overrides.request ? overrides.request(o) : Promise.resolve({ members: [{ user_id: 1, nickname: "me", avatar_url: "", role: overrides.member ? "member" : "owner", joined_at: "x" }, { user_id: overrides.member ? 9 : 2, nickname: "m2", avatar_url: "", role: overrides.member ? "owner" : "member", joined_at: "x" }] });
     },
   };
-  const scopeMod = loadTsModule(K("services/page-scope.ts"), { globals: {}, mocks: { [K("store/index")]: storeMod, [K("services/api")]: apiMod } });
+  const scopeMod = loadModule(K("services/page-scope.js"), { globals: {}, mocks: { [K("store/index")]: storeMod, [K("services/api")]: apiMod } });
   const authMod = {
     ensureLogin: () => { calls.login++; return overrides.ensureLogin ? overrides.ensureLogin(store) : Promise.resolve(); },
     refreshMe: () => { calls.me++; return overrides.refreshMe ? overrides.refreshMe(store) : Promise.resolve({ user: store.user, families: store.families }); },
   };
   let def;
-  loadTsModule(PAGE, {
+  loadModule(PAGE, {
     globals: { wx: wxBase, Page: (d) => { def = d; }, getCurrentPages: () => [{}, {}], Date: FakeDate },
     mocks: {
       [K("services/api")]: apiMod, [K("services/auth")]: authMod,

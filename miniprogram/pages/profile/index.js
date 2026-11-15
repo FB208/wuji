@@ -1,26 +1,26 @@
 /** P08 个人中心：账号、家庭、数据、关于（文档 8.5）。 */
-import { request, ApiError, clearToken } from "../../services/api";
-import { ensureLogin, refreshMe } from "../../services/auth";
-import { PageScope, ScopeOperation } from "../../services/page-scope";
-import { store, Scope } from "../../store/index";
-import { bindNotice, registerNotice, showNotice, confirmNotice, promptNotice } from "../../services/notice";
+const { request, ApiError, clearToken } = require("../../services/api");
+const { ensureLogin, refreshMe } = require("../../services/auth");
+const { PageScope } = require("../../services/page-scope");
+const { store } = require("../../store/index");
+const { bindNotice, registerNotice, showNotice, confirmNotice, promptNotice } = require("../../services/notice");
 
 Page({
   data: {
-    notice: null as any,
+    notice: null,
     nickname: "",
     avatarUrl: "",
     familyName: "",
     familyCount: 0,
-    itemCount: null as number | null,
+    itemCount: null,
     version: "V1.0",
     ready: false,
     busy: false,
     noFamily: false,
     errorText: "",
   },
-  _guard: null as PageScope | null,
-  _sessionScope: null as Scope | null,
+  _guard: null,
+  _sessionScope: null,
   _authFailed: false,
 
   onLoad() {
@@ -28,12 +28,12 @@ Page({
   },
   onShow() {
     registerNotice(bindNotice(this));
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     guard.show();
     this.activate();
   },
   async activate() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     const oldSession = this._sessionScope;
     this._authFailed = false;
     guard.invalidate();
@@ -87,14 +87,14 @@ Page({
   },
   onHide() {
     registerNotice(null);
-    (this._guard as PageScope).hide();
+    this._guard.hide();
   },
   onUnload() {
     this.onHide();
   },
 
-  active(): boolean {
-    const guard = this._guard as PageScope;
+  active() {
+    const guard = this._guard;
     return (
       !!guard &&
       guard.isFrameCurrent(guard.frame()) &&
@@ -105,8 +105,8 @@ Page({
     );
   },
 
-  clearChangedScope(op: ScopeOperation): boolean {
-    const guard = this._guard as PageScope;
+  clearChangedScope(op) {
+    const guard = this._guard;
     if (!guard.scopeChanged(op)) return false;
     guard.invalidate();
     this._sessionScope = null;
@@ -116,13 +116,13 @@ Page({
     });
     return true;
   },
-  async loadItemCount(scope: Scope) {
-    const guard = this._guard as PageScope;
+  async loadItemCount(scope) {
+    const guard = this._guard;
     const op = guard.capture();
     if (!guard.isCurrent(op) || !store.isCurrentScope(scope) || !scope.familyId) return;
     try {
-      const data = await guard.run<{ total: number }>(op, (hooks) =>
-        request<{ total: number }>({
+      const data = await guard.run(op, (hooks) =>
+        request({
           path: `/items?family_id=${op.scope.familyId}&page=1&page_size=1`,
           isCancelled: hooks.isCancelled,
           onTask: hooks.onTask,
@@ -147,7 +147,7 @@ Page({
   },
 
   onRetry() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     if (!guard.isFrameCurrent(guard.frame())) return;
     if (this._authFailed || !this._sessionScope || !store.isCurrentScope(this._sessionScope)) {
       if (!this.data.busy) this.activate();
@@ -158,7 +158,7 @@ Page({
   },
   goFamily() {
     if (!this.active()) return;
-    if (!this._sessionScope!.familyId) {
+    if (!this._sessionScope.familyId) {
       wx.navigateTo({ url: "/pages/family-list/index" });
       return;
     }
@@ -170,17 +170,17 @@ Page({
   },
   async onCreateFamily() {
     if (!this.active()) return;
-    const op = (this._guard as PageScope).capture();
-    const uid = this._sessionScope!.userId;
+    const op = this._guard.capture();
+    const uid = this._sessionScope.userId;
     const name = ((await promptNotice({ title: "创建家庭组", placeholderText: "家庭组名称", confirmText: "创建" })) || "").trim();
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     if (!name || name.length > 64) return;
     if (!guard.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
     let finishOp = op;
     this.setData({ busy: true });
     try {
-      const family = await guard.run<{ id: number }>(op, (hooks) =>
-        request<{ id: number }>({
+      const family = await guard.run(op, (hooks) =>
+        request({
           path: "/families",
           method: "POST",
           data: { name },
@@ -235,18 +235,18 @@ Page({
     showNotice("可通过小程序客服反馈问题");
   },
   async onPurgeDeleted() {
-    if (!this.active() || !this._sessionScope!.familyId) return;
-    const guard = this._guard as PageScope;
+    if (!this.active() || !this._sessionScope.familyId) return;
+    const guard = this._guard;
     const op = guard.capture();
-    const uid = this._sessionScope!.userId;
-    const fid = this._sessionScope!.familyId;
+    const uid = this._sessionScope.userId;
+    const fid = this._sessionScope.familyId;
     const ok = await confirmNotice({ title: "清理已删除记录", text: "将永久删除当前家庭组的已删除物品及其照片，无法恢复。", confirmText: "清理" });
-    const g = this._guard as PageScope;
+    const g = this._guard;
     if (!ok || !g.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
     this.setData({ busy: true });
     try {
-      const data = await g.run<{ purged: number }>(op, (hooks) =>
-        request<{ purged: number }>({
+      const data = await g.run(op, (hooks) =>
+        request({
           path: `/families/${fid}/purge-deleted`,
           method: "POST",
           isCancelled: hooks.isCancelled,
@@ -265,11 +265,11 @@ Page({
   },
   async onDeleteAccount() {
     if (!this.active()) return;
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     const op = guard.capture();
-    const uid = this._sessionScope!.userId;
+    const uid = this._sessionScope.userId;
     const input = await promptNotice({ title: "注销账号", text: "注销后账号与全部数据将被删除，无法恢复。", placeholderText: "请输入「注销」确认", confirmText: "注销" });
-    const g = this._guard as PageScope;
+    const g = this._guard;
     if (input === null || (input || "").trim() !== "注销" || !g.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
     this.setData({ busy: true });
     try {

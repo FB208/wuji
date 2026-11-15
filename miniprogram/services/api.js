@@ -1,23 +1,12 @@
 /** HTTP 封装：统一响应结构、令牌、错误码处理（文档 13.1 / 13.6）。 */
-import { showNotice } from "./notice";
+const { showNotice } = require("./notice");
 
-export const API_BASE_URL = "http://192.168.13.196:8000/api/v1"; // 部署后替换为正式域名
+const API_BASE_URL = "http://192.129.159.139:10001/api/v1"; // 部署后替换为正式域名
 
 const TOKEN_KEY = "wuji_access_token";
 
-export interface ApiErrorBody {
-  code: string;
-  message: string;
-  retryable: boolean;
-}
-
-export class ApiError extends Error {
-  code: string;
-  retryable: boolean;
-  statusCode: number;
-  retryAfterMs: number;
-
-  constructor(body: ApiErrorBody, statusCode = 0, retryAfterMs = 0) {
+class ApiError extends Error {
+  constructor(body, statusCode = 0, retryAfterMs = 0) {
     super(body.message);
     this.code = body.code;
     this.retryable = body.retryable;
@@ -26,31 +15,30 @@ export class ApiError extends Error {
   }
 }
 
-export function getToken(): string {
-  return wx.getStorageSync<string>(TOKEN_KEY) || "";
+function getToken() {
+  return wx.getStorageSync(TOKEN_KEY) || "";
 }
 
-export function setToken(token: string) {
+function setToken(token) {
   wx.setStorageSync(TOKEN_KEY, token);
 }
 
-export function clearToken() {
+function clearToken() {
   wx.removeStorageSync(TOKEN_KEY);
 }
 
-export function newIdempotencyKey(): string {
+function newIdempotencyKey() {
   return `idem_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export type RecoveryFn = () => Promise<boolean>;
-let recoveryFn: RecoveryFn | null = null;
-let recoveryInflight: Promise<boolean> | null = null;
+let recoveryFn = null;
+let recoveryInflight = null;
 
-export function registerAuthRecovery(fn: RecoveryFn) {
+function registerAuthRecovery(fn) {
   recoveryFn = fn;
 }
 
-function recoverOnce(): Promise<boolean> {
+function recoverOnce() {
   if (!recoveryFn) return Promise.resolve(false);
   if (!recoveryInflight) {
     recoveryInflight = recoveryFn()
@@ -62,11 +50,11 @@ function recoverOnce(): Promise<boolean> {
   return recoveryInflight;
 }
 
-function cancelledError(): ApiError {
+function cancelledError() {
   return new ApiError({ code: "CANCELLED", message: "请求已取消", retryable: false });
 }
 
-function retryAfterMs(headers: Record<string, string> | undefined): number {
+function retryAfterMs(headers) {
   if (!headers) return 0;
   const raw = headers["Retry-After"] || headers["retry-after"];
   if (!raw) return 0;
@@ -76,7 +64,7 @@ function retryAfterMs(headers: Record<string, string> | undefined): number {
   return Number.isFinite(at) ? Math.max(0, at - Date.now()) : 0;
 }
 
-function authFailed(statusCode: number, body: any): boolean {
+function authFailed(statusCode, body) {
   if (statusCode === 401) return true;
   if (typeof body === "string") {
     try {
@@ -88,12 +76,12 @@ function authFailed(statusCode: number, body: any): boolean {
   return !!(body && body.error && body.error.code === "AUTH_REQUIRED");
 }
 
-function parseBody<T>(statusCode: number, body: any, headers?: Record<string, string>): T {
+function parseBody(statusCode, body, headers) {
   if (statusCode >= 200 && statusCode < 300 && body && body.data !== undefined) {
-    return body.data as T;
+    return body.data;
   }
   if (typeof body === "string") {
-    let parsed: any;
+    let parsed;
     try {
       parsed = JSON.parse(body);
     } catch (_) {
@@ -102,28 +90,18 @@ function parseBody<T>(statusCode: number, body: any, headers?: Record<string, st
         statusCode
       );
     }
-    return parseBody<T>(statusCode, parsed, headers);
+    return parseBody(statusCode, parsed, headers);
   }
-  const err: ApiErrorBody =
+  const err =
     body && body.error
       ? body.error
       : { code: "NETWORK_ERROR", message: "网络异常，请重试。", retryable: true };
   throw new ApiError(err, statusCode, retryAfterMs(headers));
 }
 
-interface RequestOptions {
-  path: string;
-  // wx.request 不支持 PATCH，更新类接口统一用 POST（后端同时接受 PATCH/POST）
-  method?: "GET" | "POST" | "DELETE";
-  data?: Record<string, any>;
-  idempotencyKey?: string;
-  onTask?: (task: WechatMiniprogram.RequestTask) => void;
-  isCancelled?: () => boolean;
-  timeout?: number;
-  skipAuthRecovery?: boolean;
-}
-
-export function request<T>(options: RequestOptions): Promise<T> {
+// options: { path, method?, data?, idempotencyKey?, onTask?, isCancelled?, timeout?, skipAuthRecovery? }
+// wx.request 不支持 PATCH，更新类接口统一用 POST（后端同时接受 PATCH/POST）
+function request(options) {
   const frozen = {
     path: options.path,
     method: options.method || "GET",
@@ -131,16 +109,16 @@ export function request<T>(options: RequestOptions): Promise<T> {
     idempotencyKey: options.idempotencyKey,
     timeout: options.timeout,
   };
-  const send = (authRecoveryUsed: boolean): Promise<T> => {
+  const send = (authRecoveryUsed) => {
     if (options.isCancelled && options.isCancelled()) {
       return Promise.reject(cancelledError());
     }
-    const header: Record<string, string> = { "Content-Type": "application/json" };
+    const header = { "Content-Type": "application/json" };
     const token = getToken();
     if (token) header["Authorization"] = `Bearer ${token}`;
     if (frozen.idempotencyKey) header["Idempotency-Key"] = frozen.idempotencyKey;
 
-    return new Promise<T>((resolve, reject) => {
+    return new Promise((resolve, reject) => {
       const task = wx.request({
         url: `${API_BASE_URL}${frozen.path}`,
         method: frozen.method,
@@ -164,7 +142,7 @@ export function request<T>(options: RequestOptions): Promise<T> {
             }
           }
           try {
-            resolve(parseBody<T>(res.statusCode, res.data, res.header));
+            resolve(parseBody(res.statusCode, res.data, res.header));
           } catch (err) {
             reject(err);
           }
@@ -193,17 +171,8 @@ export function request<T>(options: RequestOptions): Promise<T> {
   return send(false);
 }
 
-export function uploadFile<T>(options: {
-  path: string;
-  filePath: string;
-  name: string;
-  formData?: Record<string, any>;
-  onProgress?: (percent: number) => void;
-  onTask?: (task: WechatMiniprogram.UploadTask) => void;
-  isCancelled?: () => boolean;
-  timeout?: number;
-  skipAuthRecovery?: boolean;
-}): Promise<T> {
+// options: { path, filePath, name, formData?, onProgress?, onTask?, isCancelled?, timeout?, skipAuthRecovery? }
+function uploadFile(options) {
   const frozen = {
     path: options.path,
     filePath: options.filePath,
@@ -211,15 +180,15 @@ export function uploadFile<T>(options: {
     formData: options.formData ? JSON.parse(JSON.stringify(options.formData)) : options.formData,
     timeout: options.timeout,
   };
-  const send = (authRecoveryUsed: boolean): Promise<T> => {
+  const send = (authRecoveryUsed) => {
     if (options.isCancelled && options.isCancelled()) {
       return Promise.reject(cancelledError());
     }
-    const header: Record<string, string> = {};
+    const header = {};
     const token = getToken();
     if (token) header["Authorization"] = `Bearer ${token}`;
 
-    return new Promise<T>((resolve, reject) => {
+    return new Promise((resolve, reject) => {
       const task = wx.uploadFile({
         url: `${API_BASE_URL}${frozen.path}`,
         filePath: frozen.filePath,
@@ -244,7 +213,7 @@ export function uploadFile<T>(options: {
             }
           }
           try {
-            resolve(parseBody<T>(res.statusCode, res.data, (res as any).header));
+            resolve(parseBody(res.statusCode, res.data, res.header));
           } catch (err) {
             reject(err);
           }
@@ -271,7 +240,7 @@ export function uploadFile<T>(options: {
         if (options.onProgress) {
           task.onProgressUpdate((res) => {
             if (options.isCancelled && options.isCancelled()) return;
-            options.onProgress!(res.progress);
+            options.onProgress(res.progress);
           });
         }
         if (options.onTask) options.onTask(task);
@@ -282,7 +251,7 @@ export function uploadFile<T>(options: {
 }
 
 /** 统一错误提示；AUTH_REQUIRED 时跳回登录页。 */
-export function showApiError(err: unknown, fallback = "网络异常，请重试。") {
+function showApiError(err, fallback = "网络异常，请重试。") {
   const message = err instanceof ApiError ? err.message : fallback;
   if (err instanceof ApiError && err.code === "AUTH_REQUIRED") {
     clearToken();
@@ -291,3 +260,16 @@ export function showApiError(err: unknown, fallback = "网络异常，请重试�
   }
   showNotice(message);
 }
+
+module.exports = {
+  API_BASE_URL,
+  ApiError,
+  getToken,
+  setToken,
+  clearToken,
+  newIdempotencyKey,
+  registerAuthRecovery,
+  request,
+  uploadFile,
+  showApiError,
+};

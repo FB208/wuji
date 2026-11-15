@@ -1,33 +1,25 @@
 /** P09 家庭组管理：改名、邀请、成员管理、退出（文档 7.2 / 7.3）。 */
-import { request, ApiError } from "../../services/api";
-import { ensureLogin, refreshMe } from "../../services/auth";
-import { PageScope, ScopeOperation } from "../../services/page-scope";
-import { store, Scope } from "../../store/index";
-import { bindNotice, registerNotice, showNotice, confirmNotice, promptNotice } from "../../services/notice";
-
-interface Member {
-  user_id: number;
-  nickname: string | null;
-  avatar_url: string | null;
-  role: string;
-  joined_at: string;
-}
+const { request, ApiError } = require("../../services/api");
+const { ensureLogin, refreshMe } = require("../../services/auth");
+const { PageScope } = require("../../services/page-scope");
+const { store } = require("../../store/index");
+const { bindNotice, registerNotice, showNotice, confirmNotice, promptNotice } = require("../../services/notice");
 
 Page({
   data: {
-    notice: null as any,
+    notice: null,
     familyName: "",
     isOwner: false,
-    members: [] as Member[],
+    members: [],
     ready: false,
     busy: false,
     noFamily: false,
     currentUserId: 0,
     errorText: "",
   },
-  _guard: null as PageScope | null,
-  _sessionScope: null as Scope | null,
-  _share: null as { scope: Scope; path: string; expiresAt: number } | null,
+  _guard: null,
+  _sessionScope: null,
+  _share: null,
   _authFailed: false,
 
   onLoad() {
@@ -35,12 +27,12 @@ Page({
   },
   onShow() {
     registerNotice(bindNotice(this));
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     guard.show();
     this.activate();
   },
   async activate() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     this._authFailed = false;
     guard.invalidate();
     const frame = guard.frame();
@@ -74,13 +66,13 @@ Page({
   onHide() {
     registerNotice(null);
     this.clearShare();
-    (this._guard as PageScope).hide();
+    this._guard.hide();
   },
   onUnload() {
     this.onHide();
   },
-  active(): boolean {
-    const guard = this._guard as PageScope;
+  active() {
+    const guard = this._guard;
     return (
       !!guard &&
       guard.isFrameCurrent(guard.frame()) &&
@@ -96,7 +88,7 @@ Page({
     try { wx.hideShareMenu(); } catch (_) {}
   },
   clearForScopeChange() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     guard.invalidate();
     this.clearShare();
     this._sessionScope = null;
@@ -106,8 +98,8 @@ Page({
       errorText: "状态已变化，请重试",
     });
   },
-  async loadMembers(op?: ScopeOperation): Promise<ScopeOperation | null> {
-    const guard = this._guard as PageScope;
+  async loadMembers(op) {
+    const guard = this._guard;
     const own = !op;
     if (own) {
       guard.invalidate();
@@ -120,8 +112,8 @@ Page({
     this.clearShare();
     this.setData({ busy: true, ready: false, members: [], isOwner: false, errorText: "", noFamily: false });
     try {
-      const data = await guard.run<{ members: Member[] }>(op, (hooks) =>
-        request<{ members: Member[] }>({
+      const data = await guard.run(op, (hooks) =>
+        request({
           path: `/families/${fid}/members`,
           isCancelled: hooks.isCancelled,
           onTask: hooks.onTask,
@@ -172,12 +164,12 @@ Page({
 
   async onRename() {
     if (!this.active() || !this.data.isOwner) return;
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     const op = guard.capture();
-    const uid = this._sessionScope!.userId;
-    const fid = this._sessionScope!.familyId;
+    const uid = this._sessionScope.userId;
+    const fid = this._sessionScope.familyId;
     const name = ((await promptNotice({ title: "修改家庭组名称", placeholderText: this.data.familyName })) || "").trim();
-    const g = this._guard as PageScope;
+    const g = this._guard;
     if (!name || name.length > 64 || !g.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
     g.invalidate();
     const wop = g.capture();
@@ -218,16 +210,16 @@ Page({
   },
   async onInvite() {
     if (!this.active() || !this.data.isOwner) return;
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     guard.invalidate();
     const op = guard.capture();
     if (!guard.isCurrent(op)) return;
-    const fid = this._sessionScope!.familyId;
+    const fid = this._sessionScope.familyId;
     this.setData({ busy: true });
     this.clearShare();
     try {
-      const data = await guard.run<{ invite_token: string; share_path: string; expires_at: string }>(op, (hooks) =>
-        request<{ invite_token: string; share_path: string; expires_at: string }>({
+      const data = await guard.run(op, (hooks) =>
+        request({
           path: `/families/${fid}/invite`, method: "POST",
           isCancelled: hooks.isCancelled, onTask: hooks.onTask,
         })
@@ -258,7 +250,7 @@ Page({
     }
   },
   onShareAppMessage() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     const s = this._share;
     const ok =
       guard && guard.isFrameCurrent(guard.frame()) &&
@@ -269,20 +261,20 @@ Page({
     }
     return {
       title: `邀请你加入家庭组「${this.data.familyName}」`,
-      path: `/${s!.path}`,
+      path: `/${s.path}`,
     };
   },
-  async onRemoveMember(e: WechatMiniprogram.TouchEvent) {
+  async onRemoveMember(e) {
     if (!this.active() || !this.data.isOwner) return;
-    const id = Number((e.currentTarget.dataset as any).id);
+    const id = Number(e.currentTarget.dataset.id);
     const member = this.data.members.find((m) => m.user_id === id);
     if (!member || member.role === "owner" || member.user_id === store.user?.id) return;
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     const op = guard.capture();
-    const uid = this._sessionScope!.userId;
-    const fid = this._sessionScope!.familyId;
+    const uid = this._sessionScope.userId;
+    const fid = this._sessionScope.familyId;
     const ok = await confirmNotice({ title: "移除成员", text: `确定将「${member.nickname || "该成员"}」移出家庭组？`, confirmText: "移除" });
-    const g = this._guard as PageScope;
+    const g = this._guard;
     if (!ok || !g.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
     g.invalidate();
     const wop = g.capture();
@@ -321,17 +313,17 @@ Page({
       this.setData({ errorText: message });
     }
   },
-  async onTransfer(e: WechatMiniprogram.TouchEvent) {
+  async onTransfer(e) {
     if (!this.active() || !this.data.isOwner) return;
-    const id = Number((e.currentTarget.dataset as any).id);
+    const id = Number(e.currentTarget.dataset.id);
     const member = this.data.members.find((m) => m.user_id === id);
     if (!member || member.role === "owner" || member.user_id === store.user?.id) return;
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     const op = guard.capture();
-    const uid = this._sessionScope!.userId;
-    const fid = this._sessionScope!.familyId;
+    const uid = this._sessionScope.userId;
+    const fid = this._sessionScope.familyId;
     const ok = await confirmNotice({ title: "转让家庭组", text: `将「${this.data.familyName}」转让给「${member.nickname || "该成员"}」？你将成为普通成员。`, confirmText: "转让" });
-    const g = this._guard as PageScope;
+    const g = this._guard;
     if (!ok || !g.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
     g.invalidate();
     const wop = g.capture();
@@ -372,13 +364,13 @@ Page({
   },
   async onDissolve() {
     if (!this.active() || !this.data.isOwner) return;
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     const op = guard.capture();
-    const uid = this._sessionScope!.userId;
-    const fid = this._sessionScope!.familyId;
+    const uid = this._sessionScope.userId;
+    const fid = this._sessionScope.familyId;
     const familyName = this.data.familyName;
     const input = await promptNotice({ title: "解散家庭组", text: "解散后所有成员将无法访问该家庭组。", placeholderText: `请输入「${familyName}」确认`, confirmText: "解散" });
-    const g = this._guard as PageScope;
+    const g = this._guard;
     if (input === null || (input || "").trim() !== familyName || !g.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
     g.invalidate();
     const wop = g.capture();
@@ -429,12 +421,12 @@ Page({
       showNotice("所有者需先转让或解散家庭组");
       return;
     }
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     const op = guard.capture();
-    const uid = this._sessionScope!.userId;
-    const fid = this._sessionScope!.familyId;
+    const uid = this._sessionScope.userId;
+    const fid = this._sessionScope.familyId;
     const ok = await confirmNotice({ title: "退出家庭组", text: "退出后将无法查看该家庭组的物品记录。", confirmText: "退出" });
-    const g = this._guard as PageScope;
+    const g = this._guard;
     if (!ok || !g.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
     g.invalidate();
     const wop = g.capture();
@@ -478,12 +470,12 @@ Page({
     }
   },
   onRetryTap() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     if (!guard.isFrameCurrent(guard.frame()) || this.data.busy) return;
     this.activate();
   },
   goList() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     if (!guard.isFrameCurrent(guard.frame()) || this.data.busy) return;
     if (!store.user || !store.user.id) {
       wx.reLaunch({ url: "/pages/launch/index" });

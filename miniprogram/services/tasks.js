@@ -1,33 +1,10 @@
 /** 任务状态轮询：长耗时接口返回 task_id，循环拉取阶段直至完成（文档：轮询而非 SSE/WS）。 */
-import { ApiError, request } from "./api";
+const { ApiError, request } = require("./api");
 
-export interface TaskErrorBody {
-  code: string;
-  message: string;
-  retryable: boolean;
-}
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export interface TaskStatus {
-  task_id: string;
-  kind: string;
-  stage: string;
-  detail: string;
-  done: boolean;
-  result: unknown;
-  error: TaskErrorBody | null;
-}
-
-export interface PollOptions {
-  intervalMs?: number;
-  timeoutMs?: number;
-  isCancelled?: () => boolean;
-  onTask?: (task: WechatMiniprogram.RequestTask) => void;
-  onStage?: (stage: string, detail: string) => void;
-}
-
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-export async function pollTask<T>(taskId: string, options: PollOptions = {}): Promise<T> {
+// options: { intervalMs?, timeoutMs?, isCancelled?, onTask?, onStage? }
+async function pollTask(taskId, options = {}) {
   const interval = options.intervalMs ?? 1000;
   const deadline = Date.now() + (options.timeoutMs ?? 120000);
   let lastKey = "";
@@ -35,7 +12,7 @@ export async function pollTask<T>(taskId: string, options: PollOptions = {}): Pr
     if (options.isCancelled && options.isCancelled()) {
       throw new ApiError({ code: "CANCELLED", message: "已取消", retryable: false });
     }
-    const status = await request<TaskStatus>({
+    const status = await request({
       path: `/tasks/${taskId}`,
       onTask: options.onTask,
       isCancelled: options.isCancelled,
@@ -47,7 +24,7 @@ export async function pollTask<T>(taskId: string, options: PollOptions = {}): Pr
     }
     if (status.done) {
       if (status.error) throw new ApiError(status.error);
-      return status.result as T;
+      return status.result;
     }
     if (Date.now() > deadline) {
       throw new ApiError({ code: "TIMEOUT", message: "处理超时，请重试", retryable: true });
@@ -55,3 +32,5 @@ export async function pollTask<T>(taskId: string, options: PollOptions = {}): Pr
     await sleep(interval);
   }
 }
+
+module.exports = { pollTask };

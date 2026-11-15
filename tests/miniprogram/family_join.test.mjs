@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { loadTsModule, mockWx, makePage, MP_DIR, noticeMock } from "./helpers/loader.mjs";
+import { loadModule, mockWx, makePage, MP_DIR, noticeMock } from "./helpers/loader.mjs";
 const K = (s) => MP_DIR.replaceAll(path.sep, "/") + "/" + s;
-const PAGE = path.join(MP_DIR, "pages/family-join/index.ts");
+const PAGE = path.join(MP_DIR, "pages/family-join/index.js");
 function deferred() { let r, rej; const p = new Promise((res, j) => { r = res; rej = j; }); return { p, resolve: r, reject: rej }; }
 async function flush(n = 10) { for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0)); }
 function makeClock() {
@@ -35,7 +35,7 @@ function env(overrides = {}, query = { invite_token: "tok1" }) {
     reLaunch: (o) => calls.relaunches.push(o.url),
     switchTab: (o) => calls.switchTab.push(o.url),
   });
-  const storeMod = loadTsModule(K("store/index.ts"), { globals: { wx: wxBase } });
+  const storeMod = loadModule(K("store/index.js"), { globals: { wx: wxBase } });
   const store = storeMod.store;
   if (!overrides.cold) {
     store.applyMe({ id: 1 }, [{ id: 10, name: "f", owner_user_id: 1, role: "owner" }]);
@@ -48,7 +48,7 @@ function env(overrides = {}, query = { invite_token: "tok1" }) {
       return overrides.request ? overrides.request(o) : Promise.resolve({ family_id: 20, family_name: "王家", owner_nickname: "爸" });
     },
   };
-  const scopeMod = loadTsModule(K("services/page-scope.ts"), { globals: {}, mocks: { [K("store/index")]: storeMod, [K("services/api")]: apiMod } });
+  const scopeMod = loadModule(K("services/page-scope.js"), { globals: {}, mocks: { [K("store/index")]: storeMod, [K("services/api")]: apiMod } });
   const authMod = {
     ensureLogin: () => { calls.login++; return overrides.ensureLogin ? overrides.ensureLogin(store) : Promise.resolve(); },
     refreshMe: (skip, pref) => {
@@ -59,7 +59,7 @@ function env(overrides = {}, query = { invite_token: "tok1" }) {
     },
   };
   let def;
-  loadTsModule(PAGE, {
+  loadModule(PAGE, {
     globals: { wx: wxBase, Page: (d) => { def = d; }, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout },
     mocks: {
       [K("services/api")]: apiMod, [K("services/auth")]: authMod,

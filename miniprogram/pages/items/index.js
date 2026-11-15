@@ -1,16 +1,16 @@
 /** P05 物品列表：搜索、分页、下拉刷新、上拉加载（文档 6.1 / 8.4）。 */
-import { request, ApiError } from "../../services/api";
-import { ensureLogin, refreshMe } from "../../services/auth";
-import { PageScope, ScopeOperation } from "../../services/page-scope";
-import { store, Scope } from "../../store/index";
-import { formatTime } from "../../utils/format";
+const { request, ApiError } = require("../../services/api");
+const { ensureLogin, refreshMe } = require("../../services/auth");
+const { PageScope } = require("../../services/page-scope");
+const { store } = require("../../store/index");
+const { formatTime } = require("../../utils/format");
 
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 300;
 
 Page({
   data: {
-    items: [] as any[],
+    items: [],
     keyword: "",
     total: 0,
     loading: false,
@@ -21,24 +21,24 @@ Page({
     busy: false,
     noFamily: false,
   },
-  _guard: null as PageScope | null,
-  _sessionScope: null as Scope | null,
-  _listOp: null as ScopeOperation | null,
+  _guard: null,
+  _sessionScope: null,
+  _listOp: null,
   _query: "",
   _page: 0,
-  _debounceTimer: null as any,
+  _debounceTimer: null,
   _authFailed: false,
 
   onLoad() {
     this._guard = new PageScope();
   },
   onShow() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     guard.show();
     this.resumeAuth();
   },
   async resumeAuth() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     if (!guard.isFrameCurrent(guard.frame())) return;
     const oldSession = this._sessionScope;
     this._authFailed = false;
@@ -103,15 +103,15 @@ Page({
       clearTimeout(this._debounceTimer);
       this._debounceTimer = null;
     }
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     guard.hide();
   },
   onUnload() {
     this.onHide();
   },
 
-  session(): Scope | null {
-    const guard = this._guard as PageScope;
+  session() {
+    const guard = this._guard;
     if (!guard || !guard.isFrameCurrent(guard.frame())) return null;
     if (!this.data.ready || this.data.busy) return null;
     const s = this._sessionScope;
@@ -119,8 +119,8 @@ Page({
     return s;
   },
 
-  async reload(): Promise<ScopeOperation | null> {
-    const guard = this._guard as PageScope;
+  async reload() {
+    const guard = this._guard;
     if (!this.session()) return null;
     if (this._debounceTimer !== null) {
       clearTimeout(this._debounceTimer);
@@ -145,7 +145,7 @@ Page({
     return op;
   },
   clearForScopeChange() {
-    (this._guard as PageScope).invalidate();
+    this._guard.invalidate();
     this._listOp = null;
     this._sessionScope = null;
     this._page = 0;
@@ -163,15 +163,15 @@ Page({
       noFamily: false,
     });
   },
-  async loadPage(page: number, replace: boolean, op: ScopeOperation) {
-    const guard = this._guard as PageScope;
+  async loadPage(page, replace, op) {
+    const guard = this._guard;
     if (!guard.isCurrent(op)) return;
     const fid = op.scope.familyId;
     const q = this._query;
     this.setData({ loading: true, errorText: "" });
     try {
-      const data = await guard.run<{ items: any[]; total: number }>(op, (hooks) =>
-        request<{ items: any[]; total: number }>({
+      const data = await guard.run(op, (hooks) =>
+        request({
           path: `/items?family_id=${fid}&q=${encodeURIComponent(q)}&page=${page}&page_size=${PAGE_SIZE}`,
           isCancelled: hooks.isCancelled,
           onTask: hooks.onTask,
@@ -224,9 +224,9 @@ Page({
     if (!store.isCurrentScope(op.scope)) return;
     this.loadPage(this._page + 1, false, op);
   },
-  onSearchInput(e: WechatMiniprogram.Input) {
+  onSearchInput(e) {
     if (!this.session()) return;
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     this.setData({ keyword: e.detail.value });
     guard.invalidate();
     this._listOp = null;
@@ -238,14 +238,14 @@ Page({
     const timerOp = guard.capture();
     this._debounceTimer = setTimeout(() => {
       this._debounceTimer = null;
-      const g = this._guard as PageScope;
+      const g = this._guard;
       if (!g.isCurrent(timerOp)) return;
       if (!this.session()) return;
       this.reload();
     }, SEARCH_DEBOUNCE_MS);
   },
   async onPullDownRefresh() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     if (!this.session()) {
       if (guard.isFrameCurrent(guard.frame())) wx.stopPullDownRefresh();
       return;
@@ -256,7 +256,7 @@ Page({
     }
   },
   onRetry() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     if (!guard.isFrameCurrent(guard.frame())) return;
     if (this._authFailed || !this._sessionScope || !store.isCurrentScope(this._sessionScope)) {
       if (!this.data.busy) this.resumeAuth();
@@ -265,7 +265,7 @@ Page({
     if (!this.session()) return;
     this.reload();
   },
-  onItemTap(e: WechatMiniprogram.CustomEvent) {
+  onItemTap(e) {
     if (!this.session()) return;
     const item = e.detail.item;
     if (!item || !this.data.items.some((i) => i.id === item.id)) return;
@@ -277,7 +277,7 @@ Page({
     wx.navigateTo({ url: "/pages/record/index" });
   },
   goHome() {
-    const guard = this._guard as PageScope;
+    const guard = this._guard;
     if (!guard.isFrameCurrent(guard.frame()) || this.data.busy || !this._sessionScope || !this._sessionScope.userId || !store.isCurrentScope(this._sessionScope)) return;
     wx.switchTab({ url: "/pages/home/index" });
   },

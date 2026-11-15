@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { loadTsModule, mockWx, MP_DIR, noticeMock } from "./helpers/loader.mjs";
+import { loadModule, mockWx, MP_DIR, noticeMock } from "./helpers/loader.mjs";
 
-const REC = path.join(MP_DIR, "services/recorder.ts");
-const API = path.join(MP_DIR, "services/api.ts");
-const STORE = path.join(MP_DIR, "store/index.ts");
+const REC = path.join(MP_DIR, "services/recorder.js");
+const API = path.join(MP_DIR, "services/api.js");
+const STORE = path.join(MP_DIR, "store/index.js");
 
 function loadRecorder() {
   const callbacks = {};
@@ -18,7 +18,7 @@ function loadRecorder() {
     onError: (cb) => { callbacks.error = cb; },
     onInterruptionBegin: (cb) => { callbacks.interrupt = cb; },
   };
-  const mod = loadTsModule(REC, { globals: { wx: mockWx({ getRecorderManager: () => manager }) } });
+  const mod = loadModule(REC, { globals: { wx: mockWx({ getRecorderManager: () => manager }) } });
   return { recorder: mod.recorder, callbacks, manager };
 }
 
@@ -64,7 +64,7 @@ test("api: 坏JSON统一ApiError", async () => {
   const wx = mockWx({
     request: (o) => o.success({ statusCode: 200, data: "not json", header: {} }),
   });
-  const api = loadTsModule(API, { globals: { wx }, mocks: { [MP_DIR.replaceAll(path.sep, "/") + "/services/notice"]: noticeMock(wx) } });
+  const api = loadModule(API, { globals: { wx }, mocks: { [MP_DIR.replaceAll(path.sep, "/") + "/services/notice"]: noticeMock(wx) } });
   await assert.rejects(api.request({ path: "/x" }), (e) => e.code === "INVALID_RESPONSE");
 });
 
@@ -76,14 +76,14 @@ test("api: 401单飞恢复一次", async () => {
       o.success({ statusCode: 200, data: { data: 1 }, header: {} });
     },
   });
-  const api = loadTsModule(API, { globals: { wx }, mocks: { [MP_DIR.replaceAll(path.sep, "/") + "/services/notice"]: noticeMock(wx) } });
+  const api = loadModule(API, { globals: { wx }, mocks: { [MP_DIR.replaceAll(path.sep, "/") + "/services/notice"]: noticeMock(wx) } });
   api.registerAuthRecovery(async () => { loginCalls++; return true; });
   const [a, b] = await Promise.all([api.request({ path: "/a" }), api.request({ path: "/b" })]);
   assert.equal(loginCalls, 1);
 });
 
 test("store: applyMe原子+scopeVersion+无效id回落", () => {
-  const store = loadTsModule(STORE, { globals: { wx: mockWx() } }).store;
+  const store = loadModule(STORE, { globals: { wx: mockWx() } }).store;
   const v0 = store.scopeVersion;
   store.applyMe({ id: 7 }, [{ id: 1, name: "a", owner_user_id: 7, role: "owner" }]);
   assert.ok(store.scopeVersion > v0);
