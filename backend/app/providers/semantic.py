@@ -9,14 +9,13 @@ from dataclasses import dataclass
 from typing import Any, Literal, Optional
 
 import httpx
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StrictStr
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StrictStr, ValidationInfo, model_validator
 from typing_extensions import Annotated
 
 from app.core.config import get_settings
 from app.core.errors import (
     AppError,
     record_parse_failed,
-    record_unclear,
     search_failed,
     semantic_budget_exceeded,
 )
@@ -27,6 +26,8 @@ from app.providers.semantic_contracts import (
     SEARCH_CANDIDATES_SYSTEM_PROMPT,
     SEARCH_SYSTEM_PROMPT,
 )
+
+from app.schemas.schemas import RecordContext, RecordOperation
 
 logger = get_logger(__name__)
 
@@ -79,11 +80,49 @@ class CandidatesOut(_StrictBase):
 
 
 class RecordJudgeOut(_StrictBase):
-    operation: Literal["create", "move"]
+    """在模型响应入口解析操作、目标及需要补充的信息。"""
+
+    status: Literal["ready", "ask"]
+    operation: RecordOperation | None
     target_item_id: Optional[PosInt]
     name: StrictStr = Field(max_length=128)
     location_text: StrictStr = Field(max_length=255)
     candidate_item_ids: list[PosInt] = Field(max_length=5)
+    question_type: Literal["operation", "item", "details"] | None
+    prompt: StrictStr
+
+    @model_validator(mode="after")
+    def check_decision(self, info: ValidationInfo) -> "RecordJudgeOut":
+        """一次检查模型字段关系及本次允许操作的物品范围。"""
+        self.name = self.name.strip()
+        self.location_text = self.location_text.strip()
+        self.prompt = self.prompt.strip()
+        allowed = info.context["allowed"]
+        referenced = set(self.candidate_item_ids)
+        if self.target_item_id is not None:
+            referenced.add(self.target_item_id)
+        if not referenced <= allowed:
+            raise ValueError("物品不在本次候选中")
+        selection = info.context["selection"]
+        if selection["event"] == "choose_operation" and self.operation != selection["operation"]:
+            raise ValueError("不能更改用户选择的操作")
+        if selection["event"] == "choose_item" and self.target_item_id != selection["target_item_id"]:
+            raise ValueError("不能更改用户选择的物品")
+        if self.status == "ask":
+            if self.question_type is None or not self.prompt:
+                raise ValueError("询问必须包含问题及类型")
+        else:
+            if self.operation is None or self.question_type is not None or self.prompt:
+                raise ValueError("可执行结果必须明确操作")
+            if self.operation == "create":
+                if not self.name or not self.location_text or self.target_item_id is not None or self.candidate_item_ids:
+                    raise ValueError("新增需要名称和位置，不携带已有目标")
+            else:
+                if self.target_item_id is None or self.candidate_item_ids != [self.target_item_id]:
+                    raise ValueError("删除和移位需要一个明确目标")
+                if self.operation == "move" and not self.location_text:
+                    raise ValueError("移位需要新位置")
+        return self
 
 
 class SearchJudgeOut(_StrictBase):
@@ -284,80 +323,34 @@ class SemanticProvider:
         transcript: str,
         existing_items: list[dict[str, Any]],
         *,
+        context: RecordContext,
         budget: SemanticBudget | None = None,
-    ) -> dict[str, Any]:
-        """入库判断（附录 A.1 / A.2）：返回 operation、target_item_id、name、location_text。"""
+    ) -> RecordJudgeOut:
+        """结合本轮问答判断新增、删除、移位或继续询问。"""
         if budget is None:
             budget = SemanticBudget.from_settings()
+        selection = context["turns"][-1]
+        if selection["event"] == "choose_item":
+            existing_items = [i for i in existing_items if i["id"] == selection["target_item_id"]]
         try:
             async with asyncio.timeout_at(budget.deadline):
                 raw, allowed = await self._judge(
                     candidate_prompt=RECORD_CANDIDATES_SYSTEM_PROMPT,
                     final_prompt=RECORD_SYSTEM_PROMPT,
-                    base_payload={"transcript": transcript},
+                    base_payload={"transcript": transcript, "context": context},
                     items_key="existing_items",
                     items=existing_items,
                     budget=budget,
                 )
-            result = RecordJudgeOut.model_validate(raw)
+            return RecordJudgeOut.model_validate(raw, context={"allowed": allowed, "selection": selection})
         except AppError:
             raise
-        except TimeoutError as exc:
-            logger.error("入库语义判断超时：%s", type(exc).__name__)
+        except (TimeoutError, httpx.TimeoutException, httpx.HTTPStatusError, httpx.TransportError) as exc:
+            logger.error("收纳语义请求失败：%s", type(exc).__name__)
             raise AppError("SEMANTIC_UNAVAILABLE", "服务暂时不可用，请稍后重试", status_code=503, retryable=True) from exc
-        except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.TransportError) as exc:
-            logger.error("入库语义请求失败：%s", type(exc).__name__)
-            raise AppError("SEMANTIC_UNAVAILABLE", "服务暂时不可用，请稍后重试", status_code=503, retryable=True) from exc
-        except Exception as exc:
-            logger.error("入库语义解析失败：%s", type(exc).__name__)
+        except (ValueError, KeyError, TypeError) as exc:
+            logger.error("收纳语义解析失败：%s", exc)
             raise record_parse_failed() from exc
-
-        op = result.operation
-        candidates = _dedupe(result.candidate_item_ids)
-        logger.info(
-            "入库判断 transcript=%r operation=%s name=%r location=%r",
-            transcript, op, result.name, result.location_text,
-        )
-        # 描述信息不足（如与收纳无关的内容）是 LLM 的合法响应，单独成码区别于契约违规。
-        # 按原始 operation 判定：create 要求名称+位置，move 只要求新位置（名称可为空保留原名）
-        if not result.location_text.strip() or (op == "create" and not result.name.strip()):
-            logger.warning("描述信息不足 transcript=%r raw=%s", transcript, raw)
-            raise record_unclear()
-        out: dict[str, Any] | None = None
-        if op == "create":
-            if result.target_item_id is not None or candidates:
-                logger.warning("入库判断被拒：create 却携带 target/candidates raw=%s", raw)
-                raise record_parse_failed()
-            out = {
-                "operation": "create",
-                "target_item_id": None,
-                "name": result.name.strip(),
-                "location_text": result.location_text.strip(),
-                "candidate_item_ids": [],
-            }
-        elif op == "move":
-            if result.target_item_id is None or candidates != [result.target_item_id]:
-                logger.warning("入库判断被拒：move 目标与候选不一致 raw=%s", raw)
-                raise record_parse_failed()
-            if result.target_item_id not in allowed:
-                out = {
-                    "operation": "create",
-                    "target_item_id": None,
-                    "name": result.name.strip(),
-                    "location_text": result.location_text.strip(),
-                    "candidate_item_ids": [],
-                }
-            else:
-                out = {
-                    "operation": "move",
-                    "target_item_id": result.target_item_id,
-                    "name": result.name.strip(),
-                    "location_text": result.location_text.strip(),
-                    "candidate_item_ids": [result.target_item_id],
-                }
-        if out is None:
-            raise record_parse_failed()
-        return out
 
     async def search_items(
         self,

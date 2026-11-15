@@ -123,22 +123,6 @@ async def reserve(
     return record
 
 
-async def renew_lease(db: AsyncSession, user_id: int, idem_key: str, lease_token: str) -> bool:
-    async with db.begin():
-        result = await db.execute(
-            update(IdempotencyRecord)
-            .where(
-                IdempotencyRecord.user_id == user_id,
-                IdempotencyRecord.idem_key == idem_key,
-                IdempotencyRecord.state == "processing",
-                IdempotencyRecord.lease_token == lease_token,
-                IdempotencyRecord.lease_until > utcnow(),
-            )
-            .values(lease_until=utcnow() + timedelta(seconds=LEASE_SECONDS))
-        )
-        return (result.rowcount or 0) > 0
-
-
 async def mark_failed(
     db: AsyncSession, user_id: int, idem_key: str, lease_token: str, exc: AppError
 ) -> None:
@@ -169,18 +153,6 @@ async def mark_failed(
             )
     except Exception as inner:
         logger.error("幂等失败标记写入失败：%s", inner)
-
-
-def assert_lease_current(record: IdempotencyRecord | None, lease_token: str) -> None:
-    if record is None:
-        raise idempotency_conflict()
-    if (
-        record.state != "processing"
-        or record.lease_token != lease_token
-        or record.lease_until is None
-        or record.lease_until <= utcnow()
-    ):
-        raise record_processing("请求已被其他执行接管，请稍后查询结果")
 
 
 def complete(record: IdempotencyRecord, result: dict) -> None:

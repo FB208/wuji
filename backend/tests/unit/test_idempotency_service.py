@@ -125,19 +125,3 @@ class TestEvaluateExisting:
         assert ei.value.code == "FAMILY_ITEMS_FULL"
         assert ei.value.status_code == 400
         assert ei.value.retryable is False
-
-
-class TestAssertLeaseCurrent:
-    def test_current_lease_ok(self):
-        svc.assert_lease_current(_record(lease_token="tok"), "tok")
-
-    def test_wrong_token_rejected(self):
-        with pytest.raises(AppError) as ei:
-            svc.assert_lease_current(_record(lease_token="other"), "tok")
-        assert ei.value.status_code == 409
-
-    def test_expired_lease_rejected(self):
-        with pytest.raises(AppError):
-            svc.assert_lease_current(
-                _record(lease_until=utcnow() - timedelta(seconds=1)), "tok"
-            )

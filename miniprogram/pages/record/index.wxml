@@ -1,86 +1,109 @@
 <view class="record-page">
-  <!-- 录音状态顶栏：按下后手指会遮住按钮文字，状态同步显示在屏幕上方 -->
-  <view
-    wx:if="{{state === 'RECORDING'}}"
-    class="mic-banner {{micWillCancel ? 'cancel' : micReady ? 'ready' : 'starting'}}"
-  >{{micWillCancel ? '松开取消' : micReady ? '正在录音 · 上滑可取消' : '正在开启麦克风…'}}</view>
+  <view wx:if="{{state === 'RECORDING'}}" class="mic-banner {{micWillCancel ? 'cancel' : micReady ? 'ready' : 'starting'}}">
+    {{micWillCancel ? '松开取消' : micReady ? '正在录音 · 上滑可取消' : '正在开启麦克风…'}}
+  </view>
 
-  <!-- 照片区：相机取景或照片预览（文档 4.2） -->
-  <view class="photo-area brutal-card">
-    <block wx:if="{{state === 'CAMERA'}}">
-      <camera
-        wx:if="{{!cameraError}}"
-        class="camera"
-        device-position="back"
-        flash="off"
-        binderror="onCameraError"
-      />
-      <view wx:else class="camera-error">
-        <view>相机不可用</view>
-        <view class="camera-error-actions">
-          <view class="mini-btn brutal-pressable" bindtap="openSetting">去设置</view>
-          <view class="mini-btn brutal-pressable" bindtap="chooseFromAlbum">从相册选择</view>
-        </view>
+  <block wx:if="{{state !== 'SAVED'}}">
+    <view wx:if="{{savedResult}}" class="saved-note brutal-card">
+      <view class="section-title">修改本条记录</view>
+      <view>
+        {{savedResult.item.name}} ·
+        <text wx:if="{{savedResult.operation === 'create'}}">已新增</text>
+        <text wx:elif="{{savedResult.operation === 'delete'}}">已删除</text>
+        <text wx:elif="{{savedResult.operation === 'move'}}">已移位</text>
       </view>
-    </block>
-    <block wx:else>
-      <image class="preview" src="{{photoPath}}" mode="aspectFill" />
-      <view
-        wx:if="{{state === 'READY'}}"
-        class="retake mini-btn brutal-pressable"
-        bindtap="retake"
-      >重拍</view>
-    </block>
+      <view class="text-hint">{{savedResult.operation === 'delete' ? savedResult.old_location : savedResult.new_location}}</view>
+    </view>
+
+    <view wx:if="{{question}}" class="question-card brutal-card">
+      <view class="section-title">{{question.prompt}}</view>
+      <view wx:if="{{question.question_type === 'operation'}}" class="operation-actions">
+        <button class="mini-btn" data-operation="create" bindtap="onOperationSelect" disabled="{{processing || !sessionReady || state === 'RECORDING'}}">新增</button>
+        <button class="mini-btn" data-operation="delete" bindtap="onOperationSelect" disabled="{{processing || !sessionReady || state === 'RECORDING'}}">删除</button>
+        <button class="mini-btn" data-operation="move" bindtap="onOperationSelect" disabled="{{processing || !sessionReady || state === 'RECORDING'}}">移位</button>
+      </view>
+      <view wx:for="{{question.candidates}}" wx:key="id" class="candidate" data-id="{{item.id}}" bindtap="onItemSelect">
+        <image class="candidate-image" src="{{item.image_url}}" mode="aspectFill" />
+        <view class="candidate-info">
+          <view class="candidate-name">{{item.name}}</view>
+          <view class="candidate-location">{{item.location_text}}</view>
+        </view>
+        <text class="candidate-arrow">›</text>
+      </view>
+      <view wx:if="{{question.candidates.length}}" class="text-hint">都不是？可以继续说话或输入文字说明。</view>
+    </view>
+
+    <view wx:if="{{!question || question.status === 'need_photo'}}" class="photo-section">
+      <view wx:if="{{photoPath || cameraOpen}}" class="photo-area brutal-card">
+        <block wx:if="{{cameraOpen}}">
+          <camera wx:if="{{!cameraError}}" class="camera" device-position="back" flash="off" binderror="onCameraError" />
+          <view wx:else class="camera-error">
+            <view>相机不可用</view>
+            <view class="mini-btn" bindtap="openSetting">去设置</view>
+          </view>
+        </block>
+        <image wx:else class="preview" src="{{photoPath}}" mode="aspectFill" />
+      </view>
+      <view class="photo-actions">
+        <button wx:if="{{!photoPath || cameraOpen}}" class="mini-btn" bindtap="takePhoto" disabled="{{processing || !sessionReady || state === 'RECORDING'}}">{{cameraOpen ? '拍下照片' : '拍照'}}</button>
+        <button wx:else class="mini-btn" bindtap="retake" disabled="{{processing || !sessionReady || state === 'RECORDING'}}">重拍</button>
+        <button class="mini-btn secondary-btn" bindtap="chooseFromAlbum" disabled="{{processing || !sessionReady || state === 'RECORDING'}}">从相册选择</button>
+      </view>
+      <view wx:if="{{state === 'INPUT'}}" class="text-hint centered">新增需要照片，删除和移位可以直接说话。</view>
+    </view>
+
+    <view class="guide">{{secondaryText || (savedResult ? '说出要修改的内容。' : question ? '继续说话，补充本次操作。' : '说说是什么、在哪里，或者要怎样处理。')}}</view>
+    <view class="main-action">
+      <hold-to-talk
+        id="h2t"
+        idle-text="按住说话"
+        disabled="{{processing || !sessionReady || state === 'FAILED'}}"
+        bind:recordstart="onRecordStart"
+        bind:recordready="onRecordReady"
+        bind:recordmove="onRecordMove"
+        bind:recordcancel="onRecordCancel"
+        bind:recordfinish="onRecordFinish"
+        bind:recorderror="onRecordError"
+        bind:permissiondenied="onPermissionDenied"
+      />
+    </view>
+    <view wx:if="{{question || savedResult}}" class="text-entry">
+      <textarea class="description-input" value="{{inputText}}" bindinput="onTextInput" maxlength="2000" auto-height="true" placeholder="也可以输入要补充或修改的内容" disabled="{{processing || state === 'RECORDING'}}" />
+      <button class="mini-btn submit-text" bindtap="onTextSubmit" disabled="{{processing || !sessionReady || state === 'RECORDING'}}">{{state === 'MODIFY' ? '保存修改' : '发送补充'}}</button>
+    </view>
+    <view class="text-hint centered footer-hint">照片用于保存物品外观；语音转为文字后不保留录音。</view>
+  </block>
+
+  <view wx:if="{{state === 'SAVED'}}" class="result-mask">
+    <view class="result-panel brutal-card">
+      <view class="result-title">已经保存</view>
+      <image class="result-image" src="{{savedResult.item.image_url}}" mode="aspectFill" />
+      <view class="result-description" wx:if="{{savedResult.operation === 'create'}}">
+        <text class="result-name">{{savedResult.item.name}}</text>已经新增至<text class="result-location">{{savedResult.new_location}}</text>
+      </view>
+      <view class="result-description" wx:elif="{{savedResult.operation === 'delete'}}">
+        <text class="result-name">{{savedResult.item.name}}</text>已经从<text class="result-location">{{savedResult.old_location}}</text>删除
+      </view>
+      <view class="result-description" wx:elif="{{savedResult.operation === 'move'}}">
+        <text class="result-name">{{savedResult.item.name}}</text>已经从<text class="result-location">{{savedResult.old_location}}</text>移位至<text class="result-location">{{savedResult.new_location}}</text>
+      </view>
+      <view class="result-actions">
+        <button class="mini-btn secondary-btn" bindtap="onModify" disabled="{{!sessionReady}}">修改</button>
+        <button class="mini-btn" bindtap="onNext" disabled="{{!sessionReady}}">下一条</button>
+      </view>
+    </view>
   </view>
 
-  <!-- 引导区（文档 9.3） -->
-  <view class="guide">{{secondaryText || '说清楚是什么，放在哪里。'}}</view>
-  <view class="guide text-hint">照片仅用于保存物品外观；语音仅转写为文字，不会保存。</view>
-
-  <!-- 主操作区 -->
-  <view class="main-action">
-    <block wx:if="{{state === 'CAMERA'}}">
-      <view class="shutter brutal-pressable" bindtap="takePhoto"></view>
-      <view class="album-entry" bindtap="chooseFromAlbum">从相册选择</view>
-    </block>
-    <hold-to-talk
-      id="h2t"
-      wx:elif="{{state === 'READY' || state === 'RECORDING'}}"
-      idle-text="按住说话"
-      disabled="{{processing || !sessionReady}}"
-      bind:recordstart="onRecordStart"
-      bind:recordready="onRecordReady"
-      bind:recordmove="onRecordMove"
-      bind:recordcancel="onRecordCancel"
-      bind:recordfinish="onRecordFinish"
-      bind:recorderror="onRecordError"
-      bind:permissiondenied="onPermissionDenied"
-    />
-  </view>
-
-  <!-- 状态遮罩：上传 / 入库 / 完成 / 失败 -->
   <status-panel
-    visible="{{state === 'UPLOADING' || state === 'SAVING' || state === 'SUCCESS' || state === 'FAILED'}}"
-    text="{{statusText}}"
-    steps="{{steps}}"
-    secondary-text="{{secondaryText}}"
-    error="{{state === 'FAILED'}}"
-    retry-text="{{primaryLabel}}"
-    secondary-retry-text="{{secondaryLabel}}"
-    bind:retry="onRetry"
-    bind:secondary="onSecondary"
+    visible="{{state === 'UPLOADING' || state === 'SAVING' || state === 'FAILED'}}"
+    text="{{statusText}}" steps="{{steps}}" secondary-text="{{secondaryText}}"
+    error="{{state === 'FAILED'}}" retry-text="{{primaryLabel}}" secondary-retry-text="{{secondaryLabel}}"
+    bind:retry="onRetry" bind:secondary="onSecondary"
   />
-
   <notice-panel
-    visible="{{notice && notice.visible}}"
-    title="{{notice.title}}"
-    text="{{notice.text}}"
-    secondary-text="{{notice.secondaryText}}"
-    confirm-text="{{notice.confirmText}}"
-    cancel-text="{{notice.cancelText}}"
-    editable="{{notice.editable}}"
-    placeholder-text="{{notice.placeholderText}}"
-    bind:confirm="onNoticeConfirm"
-    bind:cancel="onNoticeCancel"
+    visible="{{notice && notice.visible}}" title="{{notice.title}}" text="{{notice.text}}"
+    secondary-text="{{notice.secondaryText}}" confirm-text="{{notice.confirmText}}" cancel-text="{{notice.cancelText}}"
+    editable="{{notice.editable}}" placeholder-text="{{notice.placeholderText}}"
+    bind:confirm="onNoticeConfirm" bind:cancel="onNoticeCancel"
   />
 </view>

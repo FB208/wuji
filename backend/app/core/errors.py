@@ -57,10 +57,6 @@ def record_parse_failed(message: str = "请重新说清楚物品和位置") -> A
     return AppError("RECORD_PARSE_FAILED", message, status_code=422)
 
 
-def record_unclear(message: str = "没听清物品和位置，请说清楚是什么、放在哪里") -> AppError:
-    return AppError("RECORD_UNCLEAR", message, status_code=422)
-
-
 def record_failed(message: str = "入库失败，请重试") -> AppError:
     return AppError("RECORD_FAILED", message, status_code=500, retryable=True)
 
@@ -93,10 +89,6 @@ def record_processing(message: str = "请求仍在处理中，请稍后查询结
 
 def record_attempt_expired(message: str = "请求结果已过期，请重新提交") -> AppError:
     return AppError("RECORD_ATTEMPT_EXPIRED", message, status_code=410, retryable=False)
-
-
-def record_attempt_superseded(message: str = "请求已由新的执行接管，请稍后查询结果") -> AppError:
-    return AppError("RECORD_ATTEMPT_SUPERSEDED", message, status_code=409, retryable=True)
 
 
 def idempotency_key_invalid(message: str = "Idempotency-Key 需为 16~128 个字符") -> AppError:

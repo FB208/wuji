@@ -1,4 +1,4 @@
-/** P03 收纳物品：拍照 → 按住说话 → 自动提交（文档 4 章）。 */
+/** 收起来：本轮问答、直接保存及保存后修改。 */
 const { newIdempotencyKey, ApiError } = require("../../services/api");
 const { ensureLogin } = require("../../services/auth");
 const { uploadImage, transcribeAudio, recordItem } = require("../../services/upload");
@@ -6,34 +6,33 @@ const { PageScope } = require("../../services/page-scope");
 const { bindNotice, registerNotice, showNotice } = require("../../services/notice");
 const { store } = require("../../store/index");
 
-// state: "CAMERA" | "READY" | "RECORDING" | "UPLOADING" | "SAVING" | "SUCCESS" | "FAILED"
-// steps[].status: "pending" | "active" | "done" | "failed"
-// _draft: { scope, photoPath, audioPath, imageToken, transcript, key, frozen }
-
-/** 后端任务阶段 → 用户可见文案（不确定进度只报"在做什么"，不造假百分比） */
 const STAGE_TEXT = {
   queued: "排队中",
+  asr_start: "开始转写",
   asr_submit: "提交语音",
   asr_submitted: "已提交",
   asr_polling: "处理中",
   judging: "整理内容",
-  rejudging: "内容有变化，重新整理",
-  writing: "写入记录",
+  writing: "保存结果",
+  done: "处理完成",
+  failed: "处理失败",
 };
 
 Page({
   data: {
-    state: "CAMERA",
+    state: "INPUT",
     photoPath: "",
+    cameraOpen: false,
     cameraError: false,
     statusText: "",
     secondaryText: "",
     processing: false,
     sessionReady: false,
-    imageProgress: 0,
-    audioProgress: 0,
-    primaryLabel: "",
-    secondaryLabel: "",
+    inputText: "",
+    question: null,
+    savedResult: null,
+    primaryLabel: "重新提交",
+    secondaryLabel: "返回输入",
     micReady: false,
     micWillCancel: false,
     notice: null,
@@ -42,344 +41,353 @@ Page({
   _guard: null,
   _sessionScope: null,
   _draft: null,
-  _navTimer: null,
   _authFailed: false,
+  _resumePending: false,
+  _recordReturnState: "INPUT",
 
+  /** 初始化当前页面的请求作用域。 */
   onLoad() {
     this._guard = new PageScope();
   },
+  /** 回到页面后恢复本轮输入或尚未取回的结果。 */
   onShow() {
     registerNotice(bindNotice(this));
     this._guard.show();
     this.activate();
   },
+  /** 确认登录与当前家庭，并接续页面内保留的本轮数据。 */
   async activate() {
     const guard = this._guard;
-    this._authFailed = false;
     guard.invalidate();
     const frame = guard.frame();
-    if (!guard.isFrameCurrent(frame)) return;
-    const draft = this._draft;
-    let pendingBusy = false;
-    if (draft) {
-      pendingBusy = this.data.state === "UPLOADING" || this.data.state === "SAVING";
-      if (pendingBusy) this.setData({ state: "FAILED", statusText: "提交被中断", primaryLabel: "重新提交", secondaryLabel: "", steps: [] });
-    }
-    this.setData({ photoPath: "", processing: pendingBusy, sessionReady: false });
+    this._authFailed = false;
+    this.setData({ sessionReady: false });
     try {
       await ensureLogin();
     } catch (err) {
       if (!guard.isFrameCurrent(frame)) return;
       this._authFailed = true;
-      this._sessionScope = null;
-      this.setData({ state: "FAILED", statusText: "登录失败，请重试", primaryLabel: "重试登录", secondaryLabel: "" });
+      this.setData({ state: "FAILED", processing: false, statusText: "登录失败，请重试", primaryLabel: "重试登录", secondaryLabel: "" });
       return;
     }
     if (!guard.isFrameCurrent(frame)) return;
     const scope = store.captureScope();
     if (!scope.userId || !scope.familyId) {
       this._sessionScope = null;
-      if (!scope.userId) {
-        this.setData({ state: "FAILED", statusText: "登录状态需要确认", primaryLabel: "重试登录", secondaryLabel: "" });
-      } else {
-        this.setData({ state: "FAILED", statusText: "请先创建或加入家庭", primaryLabel: "前往首页", secondaryLabel: "" });
-      }
+      this.setData({ state: "FAILED", processing: false, statusText: "请先登录并创建或加入家庭", primaryLabel: "前往首页", secondaryLabel: "" });
       return;
     }
     this._sessionScope = scope;
-    if (this._draft && !store.isCurrentScope(this._draft.scope)) {
-      this._draft = null;
-      this.setData({ state: "CAMERA", photoPath: "", processing: false, sessionReady: true });
+    if (this._draft && !store.isCurrentScope(this._draft.scope)) this._draft = null;
+    this.setData({ sessionReady: true, processing: false });
+    if (!this._draft) {
+      this.onNext();
       return;
     }
-    const d = this._draft;
-    if (d) {
-      const restore = d.frozen || d.audioPath
-        ? { state: "FAILED", statusText: "提交被中断", primaryLabel: "重新提交", secondaryLabel: "" }
-        : { state: "READY", statusText: "", primaryLabel: "", secondaryLabel: "" };
-      this.setData({ ...restore, photoPath: d.photoPath, processing: false, sessionReady: true });
-    } else {
-      this.setData({ state: "CAMERA", photoPath: "", processing: false, sessionReady: true });
+    if (this._resumePending) {
+      this._resumePending = false;
+      this.submit();
     }
   },
+  /** 临时离开时停止录音和前端等待，保留本轮内容。 */
   onHide() {
     registerNotice(null);
-    if (this._navTimer !== null) {
-      clearTimeout(this._navTimer);
-      this._navTimer = null;
-    }
-    const holder = this.selectComponent && this.selectComponent("#h2t");
-    if (holder && holder.interrupt) holder.interrupt();
+    this._resumePending = this.data.processing || this._resumePending;
+    const holder = this.selectComponent("#h2t");
+    if (holder) holder.interrupt();
+    this.onRecordCancel();
     this._guard.hide();
   },
+  /** 离开页面后结束本轮，不撤回已提交的操作。 */
   onUnload() {
     this.onHide();
+    this._draft = null;
   },
 
+  /** 判断页面当前是否可以接收用户输入。 */
   active() {
-    const guard = this._guard;
-    return (
-      !!guard &&
-      guard.isFrameCurrent(guard.frame()) &&
-      this.data.sessionReady &&
-      !this.data.processing &&
-      !!this._sessionScope &&
-      store.isCurrentScope(this._sessionScope)
-    );
+    return this._guard.isFrameCurrent(this._guard.frame()) && this.data.sessionReady &&
+      !this.data.processing && !!this._sessionScope && store.isCurrentScope(this._sessionScope);
   },
+  /** 家庭或账号改变时清空本轮界面。 */
   clearForScopeChange() {
     this._sessionScope = null;
     this._draft = null;
+    this._resumePending = false;
     this.setData({
-      state: "CAMERA", photoPath: "", processing: false, sessionReady: false,
-      statusText: "状态已变化，请重试", primaryLabel: "重试", secondaryLabel: "", steps: [],
+      state: "FAILED", photoPath: "", cameraOpen: false, processing: false, sessionReady: false,
+      question: null, savedResult: null, inputText: "", steps: [],
+      statusText: "状态已变化，请重试", primaryLabel: "重试", secondaryLabel: "",
     });
   },
-
-  onCameraError(e) {
-    console.warn("camera组件错误", e && e.detail);
+  /** 显示相机不可用提示。 */
+  onCameraError() {
     this.setData({ cameraError: true });
   },
+  /** 打开微信权限设置。 */
   openSetting() {
     wx.openSetting();
   },
+  /** 用户点击后打开取景，再次点击快门拍照。 */
   takePhoto() {
-    if (!this.active() || this.data.state !== "CAMERA") return;
-    const guard = this._guard;
-    const frame = guard.frame();
-    const uid = this._sessionScope.userId;
+    if (!this.active()) return;
+    if (!this.data.cameraOpen) {
+      this.setData({ cameraOpen: true, cameraError: false });
+      return;
+    }
+    const frame = this._guard.frame();
     wx.createCameraContext().takePhoto({
       quality: "normal",
       success: (res) => {
-        const g = this._guard;
-        if (!g.isFrameCurrent(frame) || !store.user || store.user.id !== uid) return;
-        this.acceptPhoto(res.tempImagePath);
+        if (this._guard.isFrameCurrent(frame)) this.acceptPhoto(res.tempImagePath);
       },
     });
   },
+  /** 从相册选图，保留打开相册前的对话。 */
   chooseFromAlbum() {
-    if (!this.active() || this.data.state !== "CAMERA") return;
-    // 系统相册会触发页面 onHide/onShow，代次必然失效，回调里只校验会话 scope
+    if (!this.active()) return;
     const scope = this._sessionScope;
     wx.chooseMedia({
-      count: 1,
-      mediaType: ["image"],
-      sizeType: ["compressed"],
-      sourceType: ["album"],
+      count: 1, mediaType: ["image"], sizeType: ["compressed"], sourceType: ["album"],
       success: (res) => {
-        if (!store.isCurrentScope(scope) || this.data.state !== "CAMERA") return;
-        const path = res.tempFiles && res.tempFiles[0] ? res.tempFiles[0].tempFilePath : "";
-        if (!path) return;
-        this.acceptPhoto(path);
-      },
-      fail: (err) => {
-        if (!err || /cancel/.test(err.errMsg || "")) return;
-        console.warn("chooseMedia失败", err);
+        if (this._draft && store.isCurrentScope(scope)) this.acceptPhoto(res.tempFiles[0].tempFilePath);
       },
     });
   },
+  /** 接收新照片；补拍阶段直接接续已确定的操作。 */
   acceptPhoto(path) {
-    const draft = {
-      scope: this._sessionScope,
-      photoPath: path,
-      audioPath: "",
-      imageToken: "",
-      transcript: "",
-      key: "",
-      frozen: null,
-    };
-    this._draft = draft;
-    this.setData({ photoPath: path, state: "READY", statusText: "", secondaryText: "", primaryLabel: "", secondaryLabel: "" });
+    const draft = this._draft;
+    draft.photoPath = path;
+    draft.imageToken = null;
+    draft.photoPending = true;
+    this.setData({ photoPath: path, cameraOpen: false, secondaryText: "" });
+    if (this.data.state === "PHOTO") this.submit({ event: "photo" });
   },
+  /** 只更换待提交照片，保留本轮问答。 */
   retake() {
-    if (!this.active() || this.data.state !== "READY") return;
-    this._draft = null;
-    this.setData({ state: "CAMERA", photoPath: "", statusText: "", secondaryText: "" });
+    if (!this.active()) return;
+    this._draft.photoPath = "";
+    this._draft.imageToken = null;
+    this._draft.photoPending = false;
+    this.setData({ photoPath: "", cameraOpen: true, cameraError: false });
   },
 
+  /** 记录开始前的输入阶段，供取消或完成后返回。 */
   onRecordStart() {
-    if (!this.active() || this.data.state !== "READY") return;
+    if (!this.active()) return;
+    this._recordReturnState = this.data.state;
     this.setData({ state: "RECORDING", micReady: false, micWillCancel: false });
   },
+  /** 显示录音就绪状态。 */
   onRecordReady() {
     if (this.data.state === "RECORDING") this.setData({ micReady: true });
   },
+  /** 显示上滑取消状态。 */
   onRecordMove(e) {
     if (this.data.state === "RECORDING") this.setData({ micWillCancel: !!e.detail.willCancel });
   },
+  /** 取消录音后回到原输入阶段。 */
   onRecordCancel() {
-    if (this.data.state === "RECORDING") this.setData({ state: "READY", micReady: false, micWillCancel: false });
-  },
-  onRecordError() {
     if (this.data.state === "RECORDING") {
-      this.setData({ state: "READY", statusText: "", secondaryText: "录音失败，请重试", micReady: false, micWillCancel: false });
+      this.setData({ state: this._recordReturnState, micReady: false, micWillCancel: false });
     }
   },
+  /** 录音失败时保留本轮并提示重新录音。 */
+  onRecordError() {
+    this.onRecordCancel();
+    this.setData({ secondaryText: "录音失败，请重试" });
+  },
+  /** 麦克风未授权时返回原输入阶段。 */
   onPermissionDenied() {
-    if (this.data.state === "RECORDING" || this.data.state === "READY") {
-      showNotice("需要麦克风权限");
-      this.setData({ state: "READY", secondaryText: "需要麦克风权限", micReady: false, micWillCancel: false });
-    }
+    this.onRecordCancel();
+    showNotice("需要麦克风权限");
   },
+  /** 将录音作为首次描述、补充描述或修改要求提交。 */
   onRecordFinish(e) {
-    if (!this.active() || (this.data.state !== "READY" && this.data.state !== "RECORDING")) return;
-    const audioPath = e.detail.tempFilePath;
-    const draft = this._draft;
-    if (!audioPath || !draft || !store.isCurrentScope(draft.scope)) return;
-    draft.audioPath = audioPath;
-    draft.key = newIdempotencyKey();
-    draft.transcript = "";
-    draft.frozen = null;
-    this.setData({ micReady: false, micWillCancel: false });
-    this.submit();
+    if (!this.active()) return;
+    this.onRecordCancel();
+    const event = this.data.state === "MODIFY" ? "revise" : this._draft.sessionId ? "reply" : "start";
+    this.submit({ event, audioPath: e.detail.tempFilePath });
   },
-
+  /** 更新文字输入。 */
+  onTextInput(e) {
+    this.setData({ inputText: e.detail.value });
+  },
+  /** 提交补充或修改文字，也支持只更换照片。 */
+  onTextSubmit() {
+    if (!this.active()) return;
+    const transcript = this.data.inputText.trim();
+    if (!transcript && !(this.data.state === "MODIFY" && this._draft.photoPending)) {
+      showNotice("请填写要补充或修改的内容");
+      return;
+    }
+    this.submit({ event: this.data.state === "MODIFY" ? "revise" : "reply", transcript: transcript || null });
+  },
+  /** 提交用户明确选择的操作。 */
+  onOperationSelect(e) {
+    if (this.active()) this.submit({ event: "choose_operation", operation: e.currentTarget.dataset.operation });
+  },
+  /** 提交用户明确选择的候选物品。 */
+  onItemSelect(e) {
+    if (this.active()) this.submit({ event: "choose_item", target_item_id: Number(e.currentTarget.dataset.id) });
+  },
+  /** 打开修改输入，不撤回最近保存的结果。 */
+  onModify() {
+    if (!this.active()) return;
+    this.setData({ state: "MODIFY", question: null, inputText: "", secondaryText: "", cameraOpen: false });
+  },
+  /** 清空本轮页面数据并开始下一条。 */
+  onNext() {
+    if (!this.active()) return;
+    this._guard.invalidate();
+    this._resumePending = false;
+    this._draft = {
+      scope: this._sessionScope, sessionId: null, photoPath: "", imageToken: null,
+      photoPending: false, pending: null, key: null, frozen: null, inputState: "INPUT",
+    };
+    this.setData({
+      state: "INPUT", photoPath: "", cameraOpen: false, cameraError: false, inputText: "",
+      question: null, savedResult: null, statusText: "", secondaryText: "", steps: [],
+      primaryLabel: "重新提交", secondaryLabel: "返回输入", micReady: false, micWillCancel: false,
+    });
+  },
+  /** 更新当前请求的进度展示。 */
   _setStep(key, status, detail) {
-    const steps = this.data.steps.map((s) =>
-      s.key === key ? { ...s, status, detail: detail !== undefined ? detail : s.detail } : s
-    );
-    this.setData({ steps });
+    this.setData({ steps: this.data.steps.map((s) =>
+      s.key === key ? { ...s, status, detail: detail !== undefined ? detail : s.detail } : s) });
   },
-
+  /** 保留输入和已保存结果，提供重试或返回输入。 */
   fail(err, draft) {
-    const code = err instanceof ApiError ? err.code : "";
     const message = err instanceof ApiError ? err.message : "处理失败，请重试";
-    if (code === "IMAGE_INVALID") {
-      this._draft = null;
-      this.setData({ state: "CAMERA", photoPath: "", processing: false, statusText: "", secondaryText: message, steps: [] });
-      return;
-    }
-    if (code === "TRANSCRIBE_FAILED" || code === "RECORD_PARSE_FAILED" || code === "RECORD_UNCLEAR") {
-      draft.audioPath = "";
-      draft.key = "";
-      draft.transcript = "";
+    if (err instanceof ApiError && err.code === "IMAGE_INVALID") {
+      draft.imageToken = null;
       draft.frozen = null;
-      showNotice(message);
-      this.setData({ state: "READY", processing: false, statusText: "", secondaryText: message, steps: [] });
-      return;
+      draft.key = newIdempotencyKey();
     }
-    this.setData({ state: "FAILED", processing: false, statusText: "", primaryLabel: "重新提交", secondaryLabel: message });
+    this.setData({
+      state: "FAILED", processing: false, statusText: message, secondaryText: "", steps: [],
+      primaryLabel: "重新提交", secondaryLabel: "返回输入",
+    });
   },
 
-  async submit() {
-    const guard = this._guard;
+  /** 提交本次输入，按明确状态展示结果；未知返回值进入失败提示。 */
+  async submit(input) {
     const draft = this._draft;
-    if (!draft || !draft.frozen && !draft.audioPath || !store.isCurrentScope(draft.scope)) return;
-    if (this.data.state === "UPLOADING" || this.data.state === "SAVING") return;
+    if (!draft || this.data.processing) return;
+    if (input) {
+      draft.pending = input;
+      draft.key = newIdempotencyKey();
+      draft.frozen = null;
+      draft.inputState = this.data.state;
+    }
+    if (!draft.pending) return;
+    if (!this.active()) {
+      this._resumePending = true;
+      return;
+    }
+    const guard = this._guard;
     guard.invalidate();
     const op = guard.capture();
-    if (!guard.isCurrent(op)) return;
-    const fid = draft.frozen ? draft.frozen.family_id : draft.scope.familyId;
-    const steps = [
-      { key: "photo", label: "上传照片", status: draft.imageToken ? "done" : "active", detail: "" },
-      { key: "audio", label: "上传语音", status: draft.transcript ? "done" : "active", detail: "" },
-      { key: "asr", label: "处理语音", status: draft.transcript ? "done" : "pending", detail: "" },
-      { key: "judge", label: "整理并写入", status: "pending", detail: "" },
-    ];
-    this.setData({ state: "UPLOADING", processing: true, statusText: "正在上传", secondaryText: "", imageProgress: 0, audioProgress: 0, steps });
+    // 语音和收纳共用任务阶段展示，未知阶段直接交给现有失败提示。
+    const onStage = (key, stage) => {
+      if (!guard.isCurrent(op)) return;
+      if (!Object.keys(STAGE_TEXT).includes(stage)) {
+        throw new ApiError({ code: "INVALID_TASK_STAGE", message: `未知任务阶段 stage=${JSON.stringify(stage)}`, retryable: false });
+      }
+      this._setStep(key, "active", STAGE_TEXT[stage]);
+    };
+    const pending = draft.pending;
+    const steps = [];
+    if (draft.photoPending) steps.push({ key: "photo", label: "上传照片", status: draft.imageToken ? "done" : "active", detail: "" });
+    if (pending.audioPath) steps.push({ key: "speech", label: "语音转写", status: pending.transcript ? "done" : "active", detail: "" });
+    steps.push({ key: "judge", label: "整理内容", status: "pending", detail: "" });
+    this.setData({ state: "UPLOADING", processing: true, statusText: "正在处理", secondaryText: "", steps });
     try {
       if (!draft.frozen) {
-        const results = await Promise.allSettled([
-          draft.imageToken ? Promise.resolve({ image_token: draft.imageToken }) : guard.run(op, (hooks) =>
-            uploadImage(fid, draft.photoPath, {
-              isCancelled: hooks.isCancelled,
-              onTask: hooks.onTask,
-              onProgress: (p) => {
-                if (guard.isFrameCurrent(op.generation)) {
-                  this.setData({ imageProgress: p });
-                  this._setStep("photo", "active", `${p}%`);
-                }
-              },
-            })
-          ),
-          draft.transcript ? Promise.resolve({ transcript: draft.transcript }) : guard.run(op, (hooks) =>
-            transcribeAudio(draft.audioPath, {
-              isCancelled: hooks.isCancelled,
-              onTask: hooks.onTask,
-              onProgress: (p) => {
-                if (guard.isFrameCurrent(op.generation)) {
-                  this.setData({ audioProgress: p });
-                  this._setStep("audio", "active", `${p}%`);
-                }
-              },
-              onStage: (stage, detail) => {
-                if (!guard.isFrameCurrent(op.generation)) return;
-                this._setStep("audio", "done", "");
-                const text = stage === "asr_polling" && detail
-                  ? `处理中 · 第${detail}轮`
-                  : STAGE_TEXT[stage] || "处理中";
-                this._setStep("asr", "active", text);
-              },
-            })
-          ),
-        ]);
-        if (guard.scopeChanged(op)) {
-          this.clearForScopeChange();
-          return;
+        const jobs = [];
+        if (draft.photoPending && !draft.imageToken) {
+          jobs.push({ key: "photo", promise: guard.run(op, (hooks) => uploadImage(draft.scope.familyId, draft.photoPath, {
+            ...hooks,
+            onProgress: (p) => {
+              if (guard.isCurrent(op)) this._setStep("photo", "active", `${p}%`);
+            },
+          })) });
         }
+        if (pending.audioPath && !pending.transcript) {
+          jobs.push({ key: "speech", promise: guard.run(op, (hooks) => transcribeAudio(pending.audioPath, {
+            ...hooks,
+            onStage: (stage) => onStage("speech", stage),
+          })) });
+        }
+        const results = await Promise.allSettled(jobs.map((job) => job.promise));
+        if (guard.scopeChanged(op)) { this.clearForScopeChange(); return; }
         if (!guard.isCurrent(op)) return;
-        if (results[0].status === "fulfilled" && !draft.imageToken) {
-          draft.imageToken = results[0].value.image_token;
-          this._setStep("photo", "done", "");
-        }
-        if (results[1].status === "fulfilled" && !draft.transcript) {
-          draft.transcript = results[1].value.transcript;
-          this._setStep("asr", "done", "");
-        }
-        const failed = results.find((r) => r.status === "rejected");
-        if (failed) {
-          if (results[0].status === "rejected") this._setStep("photo", "failed");
-          if (results[1].status === "rejected") {
-            const audioStep = this.data.steps.find((s) => s.key === "audio");
-            this._setStep(audioStep && audioStep.status === "done" ? "asr" : "audio", "failed");
+        let error = null;
+        results.forEach((result, i) => {
+          const key = jobs[i].key;
+          if (result.status === "fulfilled") {
+            if (key === "photo") draft.imageToken = result.value.image_token;
+            else pending.transcript = result.value.transcript;
+            this._setStep(key, "done", "");
+          } else {
+            this._setStep(key, "failed", "");
+            error = error || result.reason;
           }
-          this.fail(failed.reason, draft);
-          return;
-        }
-        draft.frozen = { family_id: fid, image_token: draft.imageToken, transcript: draft.transcript };
+        });
+        if (error) throw error;
+        draft.frozen = {
+          family_id: draft.scope.familyId, session_id: draft.sessionId, event: pending.event,
+          transcript: pending.transcript || null, operation: pending.operation || null,
+          target_item_id: pending.target_item_id || null,
+          image_token: draft.photoPending ? draft.imageToken : null,
+        };
       }
+      this.setData({ state: "SAVING", statusText: "正在处理" });
+      this._setStep("judge", "active", "排队中");
+      const result = await guard.run(op, (hooks) => recordItem(draft.frozen, draft.key, {
+        ...hooks,
+        onStage: (stage) => onStage("judge", stage),
+      }));
+      if (guard.scopeChanged(op)) { this.clearForScopeChange(); return; }
       if (!guard.isCurrent(op)) return;
-      this.setData({ state: "SAVING", statusText: "正在入库" });
-      this._setStep("judge", "active", STAGE_TEXT.queued);
-      await guard.run(op, (hooks) =>
-        recordItem(fid, draft.frozen.image_token, draft.frozen.transcript, draft.key, {
-          isCancelled: hooks.isCancelled,
-          onStage: (stage, detail) => {
-            if (!guard.isFrameCurrent(op.generation)) return;
-            const text = stage === "asr_polling" && detail
-              ? `处理中 · 第${detail}轮`
-              : STAGE_TEXT[stage] || "";
-            this._setStep("judge", "active", text || undefined);
-          },
-        })
-      );
-      this._setStep("judge", "done", "");
-      if (guard.scopeChanged(op)) {
-        this.clearForScopeChange();
-        return;
+      let nextState;
+      switch (result?.status) {
+        case "saved":
+          if (!["create", "delete", "move"].includes(result.operation)) {
+            throw new ApiError({ code: "INVALID_RECORD_OPERATION", message: `未知收纳操作 operation=${JSON.stringify(result.operation)}；返回结果：${JSON.stringify(result)}`, retryable: false });
+          }
+          nextState = "SAVED";
+          break;
+        case "ask":
+          nextState = "ASK";
+          break;
+        case "need_photo":
+          nextState = "PHOTO";
+          break;
+        default:
+          throw new ApiError({ code: "INVALID_RECORD_STATUS", message: `未知收纳状态 status=${JSON.stringify(result?.status)}；返回结果：${JSON.stringify(result)}`, retryable: false });
       }
-      if (!guard.isCurrent(op)) return;
-      this.setData({ state: "SUCCESS", processing: false, statusText: "入库完成", secondaryText: draft.frozen.transcript, steps: [] });
-      this._navTimer = setTimeout(() => {
-        this._navTimer = null;
-        const g = this._guard;
-        if (!g.isFrameCurrent(op.generation)) return;
-        wx.switchTab({ url: "/pages/home/index" });
-      }, 1000);
+      draft.sessionId = result.session_id;
+      draft.pending = null;
+      draft.frozen = null;
+      draft.imageToken = null;
+      draft.photoPending = false;
+      this.setData({
+        state: nextState,
+        processing: false, cameraOpen: false, inputText: "", statusText: "", secondaryText: "", steps: [],
+        question: result.status === "saved" ? null : result,
+        savedResult: result.status === "saved" ? result : this.data.savedResult,
+        photoPath: result.status === "saved" ? result.item.image_url : this.data.photoPath,
+      });
     } catch (err) {
-      if (guard.scopeChanged(op)) {
-        this.clearForScopeChange();
-        return;
-      }
+      if (guard.scopeChanged(op)) { this.clearForScopeChange(); return; }
       if (!guard.isCurrent(op)) return;
-      if (this.data.state === "SAVING") this._setStep("judge", "failed");
       this.fail(err, draft);
     }
   },
-
+  /** 使用原请求重试，登录失败时先恢复登录。 */
   onRetry() {
-    const guard = this._guard;
-    if (!guard.isFrameCurrent(guard.frame()) || this.data.processing) return;
+    if (this.data.processing) return;
     if (!this._authFailed && store.user && !store.currentFamilyId) {
       wx.switchTab({ url: "/pages/home/index" });
       return;
@@ -388,15 +396,11 @@ Page({
       this.activate();
       return;
     }
-    const draft = this._draft;
-    if (!draft || !store.isCurrentScope(draft.scope)) {
-      this.activate();
-      return;
-    }
     this.submit();
   },
+  /** 返回本次输入阶段，允许调整失败请求的内容。 */
   onSecondary() {
     if (!this.active()) return;
-    wx.switchTab({ url: "/pages/home/index" });
+    this.setData({ state: this._draft.inputState, inputText: this._draft.pending.transcript || "", statusText: "", steps: [] });
   },
 });

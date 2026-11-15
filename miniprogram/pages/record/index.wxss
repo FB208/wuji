@@ -1,11 +1,9 @@
 .record-page {
   min-height: 100vh;
-  padding: 32rpx;
-  display: flex;
-  flex-direction: column;
+  box-sizing: border-box;
+  padding: 32rpx 32rpx calc(32rpx + env(safe-area-inset-bottom));
 }
 
-/* 录音状态顶栏：按下后手指遮住按钮文字，状态显示在屏幕上方 */
 .mic-banner {
   position: fixed;
   top: 0;
@@ -20,20 +18,10 @@
   color: #111111;
   border-bottom: 4rpx solid #111111;
 }
+.mic-banner.starting { background: #ffb84d; }
+.mic-banner.ready { background: #77dfa0; }
+.mic-banner.cancel { background: #ff9db5; }
 
-.mic-banner.starting {
-  background: #ffb84d;
-}
-
-.mic-banner.ready {
-  background: #77dfa0;
-}
-
-.mic-banner.cancel {
-  background: #ff9db5;
-}
-
-/* 4:3 照片容器（文档 8.2） */
 .photo-area {
   position: relative;
   width: 100%;
@@ -41,14 +29,7 @@
   overflow: hidden;
   background: #dddddd;
 }
-
-.camera,
-.preview {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
+.camera, .preview { width: 100%; height: 100%; }
 .camera-error {
   height: 100%;
   display: flex;
@@ -56,75 +37,89 @@
   align-items: center;
   justify-content: center;
   gap: 24rpx;
-  font-weight: 700;
 }
-
-.camera-error-actions {
+.photo-actions, .operation-actions, .result-actions {
   display: flex;
   gap: 24rpx;
+  margin-top: 24rpx;
 }
-
 .mini-btn {
-  padding: 12rpx 28rpx;
+  flex: 1;
+  margin: 0;
+  padding: 16rpx 20rpx;
+  line-height: 1.5;
   background: #ffd84d;
+  color: #111111;
   border: 4rpx solid #111111;
   border-radius: 12rpx;
   box-shadow: 4rpx 4rpx 0 #111111;
-  font-size: 26rpx;
+  font-size: 28rpx;
   font-weight: 700;
 }
-
-.retake {
-  position: absolute;
-  top: 20rpx;
-  right: 20rpx;
-}
-
+.mini-btn::after { border: none; }
+.mini-btn[disabled] { opacity: 0.5; }
+.secondary-btn { background: #ffffff; }
 .guide {
   margin-top: 32rpx;
   text-align: center;
   font-size: 30rpx;
   color: #555555;
 }
-
-.main-action {
-  margin-top: 48rpx;
+.main-action { margin-top: 24rpx; }
+.main-action hold-to-talk { display: block; width: 100%; }
+.section-title { font-size: 32rpx; font-weight: 700; line-height: 1.6; }
+.text-hint { margin-top: 16rpx; font-size: 24rpx; line-height: 1.6; color: #666666; }
+.centered { text-align: center; }
+.footer-hint { margin-top: 32rpx; }
+.saved-note, .question-card { padding: 24rpx; margin-bottom: 28rpx; }
+.saved-note { background: #fff3c4; }
+.candidate {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 24rpx;
-  /* 按住说话宽度占可用区域 80% 以上（文档 8.2） */
-  padding: 0 40rpx;
-}
-
-.main-action hold-to-talk {
-  width: 100%;
-}
-
-.shutter {
-  width: 140rpx;
-  height: 140rpx;
-  border-radius: 50%;
-  background: #ffd84d;
-  border: 6rpx solid #111111;
-  box-shadow: 8rpx 8rpx 0 #111111;
-}
-
-.album-entry {
-  margin: 16rpx auto 0;
-  width: 280rpx;
-  text-align: center;
-  padding: 14rpx 0;
+  gap: 20rpx;
+  margin-top: 20rpx;
+  padding: 16rpx;
   background: #ffffff;
-  border: 4rpx solid #111111;
-  border-radius: 16rpx;
-  box-shadow: 4rpx 4rpx 0 #111111;
-  font-size: 26rpx;
-  font-weight: 700;
-  transition: transform 0.08s ease, box-shadow 0.08s ease;
+  border: 3rpx solid #111111;
+  border-radius: 12rpx;
 }
-
-.album-entry:active {
-  transform: translate(4rpx, 4rpx);
-  box-shadow: 2rpx 2rpx 0 #111111;
+.candidate-image { width: 116rpx; height: 116rpx; border-radius: 8rpx; flex-shrink: 0; }
+.candidate-info { flex: 1; min-width: 0; overflow-wrap: break-word; }
+.candidate-name { font-size: 30rpx; font-weight: 700; }
+.candidate-location { margin-top: 8rpx; color: #555555; font-size: 26rpx; }
+.candidate-arrow { font-size: 44rpx; }
+.text-entry { margin-top: 28rpx; }
+.description-input {
+  width: 100%;
+  min-height: 120rpx;
+  box-sizing: border-box;
+  padding: 20rpx;
+  background: #ffffff;
+  border: 3rpx solid #111111;
+  border-radius: 12rpx;
+  font-size: 28rpx;
+  line-height: 1.6;
 }
+.submit-text { margin-top: 20rpx; }
+.result-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32rpx;
+  background: rgba(0, 0, 0, 0.35);
+}
+.result-panel {
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 32rpx;
+  box-sizing: border-box;
+  background: #ffffff;
+}
+.result-title { font-size: 38rpx; font-weight: 700; text-align: center; }
+.result-image { display: block; width: 100%; height: 280rpx; margin: 24rpx 0; border-radius: 12rpx; }
+.result-description { font-size: 30rpx; line-height: 1.9; overflow-wrap: break-word; }
+.result-name, .result-location { font-weight: 700; margin: 0 8rpx; }

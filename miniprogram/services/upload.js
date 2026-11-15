@@ -61,11 +61,12 @@ async function transcribeAudio(filePath, options = {}) {
   });
 }
 
-async function recordItem(familyId, imageToken, transcript, idempotencyKey, options = {}) {
+/** 提交本轮描述、选择、补拍或修改，并取得后台处理结果。 */
+async function recordItem(payload, idempotencyKey, options = {}) {
   const ref = await request({
     path: "/items/record",
     method: "POST",
-    data: { family_id: familyId, image_token: imageToken, transcript },
+    data: payload,
     idempotencyKey,
     isCancelled: options.isCancelled,
     timeout: options.timeout,

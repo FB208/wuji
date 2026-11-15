@@ -181,3 +181,20 @@ class UploadedImage(Base):
     )
     delete_after: Mapped[datetime | None] = mapped_column(DT3, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DT3, nullable=False, server_default=func.now(3))
+
+
+class RecordSession(Base):
+    """保存用户最近一轮收纳对话及更正上一笔操作所需的数据。"""
+
+    __tablename__ = "record_sessions"
+    __table_args__ = (UniqueConstraint("user_id", name="uk_record_sessions_user"), MYSQL_ARGS)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    family_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("families.id", ondelete="CASCADE"), nullable=False
+    )
+    context_json: Mapped[str] = mapped_column(Text, nullable=False)
+    undo_json: Mapped[str] = mapped_column(Text, nullable=False)
