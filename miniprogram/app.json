@@ -29,14 +29,7 @@
       { "pagePath": "pages/profile/index", "text": "我的" }
     ]
   },
-  "permission": {
-    "scope.record": {
-      "desc": "录音仅用于记录和查找物品，不用于其他用途"
-    },
-    "scope.camera": {
-      "desc": "拍照仅用于记录物品外观"
-    }
-  },
+  "permission": {},
   "requiredPrivateInfos": [],
   "style": "v2",
   "sitemapLocation": "sitemap.json",

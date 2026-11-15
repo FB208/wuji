@@ -61,7 +61,8 @@ class Recorder {
       }
       s.resolve({ tempFilePath: res.tempFilePath, durationMs: duration });
     });
-    this.manager.onError(() => {
+    this.manager.onError((res) => {
+      console.warn("recorder错误", res);
       const s = this.session;
       if (!s) return;
       s.awaitingAck = false;
@@ -109,7 +110,8 @@ class Recorder {
       if (setting.authSetting["scope.record"]) return true;
       await wx.authorize({ scope: "scope.record" });
       return true;
-    } catch (_) {
+    } catch (err) {
+      console.warn("录音权限申请失败", err);
       return false;
     }
   }

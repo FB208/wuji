@@ -152,7 +152,8 @@ Page({
     });
   },
 
-  onCameraError() {
+  onCameraError(e?: WechatMiniprogram.CustomEvent) {
+    console.warn("camera组件错误", e && e.detail);
     this.setData({ cameraError: true });
   },
   openSetting() {
