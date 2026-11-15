@@ -167,8 +167,8 @@ async def test_failed_non_retryable_replays_without_reexecution(db: AsyncSession
             await rs.record_item(db, user_id, family_id, token, "收东西", KEY)
         assert ei.value.code == "FAMILY_ITEMS_FULL"
         assert judge.await_count == calls
-    assert attempt["retryable"] is False
-    assert attempt["error"]["code"] == "FAMILY_ITEMS_FULL"
+    assert ei.value.retryable is False
+    assert ei.value.code == "FAMILY_ITEMS_FULL"
 
 
 async def test_item_out_updated_at_has_tz(db: AsyncSession):

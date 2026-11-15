@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 from typing_extensions import Annotated
 
 
@@ -88,10 +88,33 @@ class ItemBriefOut(BaseModel):
     image_url: str
 
 
+class RecordResolution(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: int | None = Field(default=None, gt=0)
+    create: bool = False
+
+    @model_validator(mode="after")
+    def _exactly_one(self) -> "RecordResolution":
+        if (self.item_id is None) == (not self.create):
+            raise ValueError("item_id 与 create 必须恰居其一")
+        return self
+
+
 class ItemRecordRequest(BaseModel):
     family_id: int
-    image_token: str = Field(min_length=1, max_length=2048)
-    transcript: str = Field(min_length=1, max_length=2000)
+    image_token: str | None = Field(default=None, min_length=1, max_length=2048)
+    transcript: str | None = Field(default=None, min_length=1, max_length=2000)
+    record_token: str | None = Field(default=None, min_length=1, max_length=4096)
+    resolution: RecordResolution | None = None
+
+    @model_validator(mode="after")
+    def _one_form(self) -> "ItemRecordRequest":
+        record = self.image_token is not None and self.transcript is not None
+        resolve = self.record_token is not None and self.resolution is not None
+        if record == resolve:
+            raise ValueError("入库与确认参数必须恰居其一")
+        return self
 
 
 class ItemRecordOut(BaseModel):

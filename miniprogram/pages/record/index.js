@@ -1,14 +1,14 @@
-/** P03 收纳物品：拍照 → 按住说话 → 自动提交（文档 4 章）。 */
-const { newIdempotencyKey, ApiError } = require("../../services/api");
+/** P03 收纳物品：拍照 → 按住说话 → 自动提交 → 必要时确认（文档 4 章）。 */
+const { newIdempotencyKey, ApiError, request } = require("../../services/api");
 const { ensureLogin } = require("../../services/auth");
-const { uploadImage, transcribeAudio, recordItem } = require("../../services/upload");
+const { uploadImage, transcribeAudio, recordItem, resolveRecord } = require("../../services/upload");
 const { PageScope } = require("../../services/page-scope");
 const { bindNotice, registerNotice, showNotice } = require("../../services/notice");
 const { store } = require("../../store/index");
 
-// state: "CAMERA" | "READY" | "RECORDING" | "UPLOADING" | "SAVING" | "SUCCESS" | "FAILED"
+// state: "CAMERA" | "READY" | "RECORDING" | "UPLOADING" | "SAVING" | "CONFIRM" | "SUCCESS" | "FAILED"
 // steps[].status: "pending" | "active" | "done" | "failed"
-// _draft: { scope, photoPath, audioPath, imageToken, transcript, key, frozen }
+// _draft: { scope, photoPath, audioPath, imageToken, transcript, key, frozen, confirm }
 
 /** 后端任务阶段 → 用户可见文案（不确定进度只报"在做什么"，不造假百分比） */
 const STAGE_TEXT = {
@@ -20,6 +20,28 @@ const STAGE_TEXT = {
   rejudging: "内容有变化，重新整理",
   writing: "写入记录",
 };
+
+/** 入库结果文案：【物品】已新增至【位置】/ 已从【位置】移位至【位置】/ 已从【位置】删除 */
+function resultText(result) {
+  const item = (result && result.item) || {};
+  const prev = (result && result.previous) || {};
+  const name = item.name ? `「${item.name}」` : "物品";
+  if (result.operation === "move") {
+    return `${name}已从「${prev.location_text || ""}」移位至「${item.location_text}」`;
+  }
+  if (result.operation === "delete") {
+    return `${name}已从「${prev.location_text || ""}」删除`;
+  }
+  return `${name}已新增至「${item.location_text}」`;
+}
+
+function confirmHint(confirm) {
+  const name = confirm.name ? `「${confirm.name}」` : "这件物品";
+  if (confirm.action === "delete") {
+    return `${name}：点选要删除的那一件`;
+  }
+  return `${name}：点选本次说的那一件；是新物品则选下方新增`;
+}
 
 Page({
   data: {
@@ -38,6 +60,10 @@ Page({
     micWillCancel: false,
     notice: null,
     steps: [],
+    confirm: null,
+    confirmHint: "",
+    result: null,
+    restored: false,
   },
   _guard: null,
   _sessionScope: null,
@@ -94,9 +120,11 @@ Page({
     }
     const d = this._draft;
     if (d) {
-      const restore = d.frozen || d.audioPath
-        ? { state: "FAILED", statusText: "提交被中断", primaryLabel: "重新提交", secondaryLabel: "" }
-        : { state: "READY", statusText: "", primaryLabel: "", secondaryLabel: "" };
+      const restore = d.confirm
+        ? { state: "CONFIRM", confirm: d.confirm, confirmHint: confirmHint(d.confirm), statusText: "", secondaryText: "", steps: [] }
+        : d.frozen || d.audioPath
+          ? { state: "FAILED", statusText: "提交被中断", primaryLabel: "重新提交", secondaryLabel: "" }
+          : { state: "READY", statusText: "", primaryLabel: "", secondaryLabel: "" };
       this.setData({ ...restore, photoPath: d.photoPath, processing: false, sessionReady: true });
     } else {
       this.setData({ state: "CAMERA", photoPath: "", processing: false, sessionReady: true });
@@ -187,9 +215,21 @@ Page({
       transcript: "",
       key: "",
       frozen: null,
+      confirm: null,
     };
     this._draft = draft;
-    this.setData({ photoPath: path, state: "READY", statusText: "", secondaryText: "", primaryLabel: "", secondaryLabel: "" });
+    this.setData({
+      photoPath: path,
+      state: "READY",
+      statusText: "",
+      secondaryText: "",
+      primaryLabel: "",
+      secondaryLabel: "",
+      confirm: null,
+      confirmHint: "",
+      result: null,
+      restored: false,
+    });
   },
   retake() {
     if (!this.active() || this.data.state !== "READY") return;
@@ -341,7 +381,7 @@ Page({
       if (!guard.isCurrent(op)) return;
       this.setData({ state: "SAVING", statusText: "正在入库" });
       this._setStep("judge", "active", STAGE_TEXT.queued);
-      await guard.run(op, (hooks) =>
+      const result = await guard.run(op, (hooks) =>
         recordItem(fid, draft.frozen.image_token, draft.frozen.transcript, draft.key, {
           isCancelled: hooks.isCancelled,
           onStage: (stage, detail) => {
@@ -359,13 +399,39 @@ Page({
         return;
       }
       if (!guard.isCurrent(op)) return;
-      this.setData({ state: "SUCCESS", processing: false, statusText: "入库完成", secondaryText: draft.frozen.transcript, steps: [] });
-      this._navTimer = setTimeout(() => {
-        this._navTimer = null;
-        const g = this._guard;
-        if (!g.isFrameCurrent(op.generation)) return;
-        wx.switchTab({ url: "/pages/home/index" });
-      }, 1000);
+      if (result && result.operation === "confirm") {
+        draft.confirm = {
+          token: result.record_token,
+          action: result.action || null,
+          name: result.name,
+          locationText: result.location_text,
+          candidates: result.candidates || [],
+          key2: newIdempotencyKey(),
+        };
+        this.setData({
+          state: "CONFIRM",
+          processing: false,
+          confirm: draft.confirm,
+          confirmHint: confirmHint(draft.confirm),
+          statusText: "",
+          secondaryText: "",
+          steps: [],
+        });
+        return;
+      }
+      this._draft = null;
+      this.setData({
+        state: "SUCCESS",
+        processing: false,
+        result,
+        statusText: resultText(result),
+        secondaryText: draft.frozen.transcript,
+        primaryLabel: result && result.operation === "delete" ? "撤销" : "修改",
+        secondaryLabel: "完成",
+        restored: false,
+        confirm: null,
+        steps: [],
+      });
     } catch (err) {
       if (guard.scopeChanged(op)) {
         this.clearForScopeChange();
@@ -377,7 +443,111 @@ Page({
     }
   },
 
+  /** CONFIRM：点选候选物品（应用 LLM 判定的行为；action 为空时按移位处理） */
+  onPickCandidate(e) {
+    if (this.data.state !== "CONFIRM" || this.data.processing) return;
+    const item = e.detail && e.detail.item;
+    const confirm = this._draft && this._draft.confirm;
+    if (!item || !confirm || !confirm.candidates.some((c) => c.id === item.id)) return;
+    this.resolveDraft({ item_id: item.id });
+  },
+  onConfirmCreate() {
+    if (this.data.state !== "CONFIRM" || this.data.processing) return;
+    this.resolveDraft({ create: true });
+  },
+  onConfirmCancel() {
+    if (this.data.state !== "CONFIRM" || this.data.processing) return;
+    if (this._draft) this._draft.confirm = null;
+    this.setData({ state: "READY", confirm: null, confirmHint: "", statusText: "", secondaryText: "" });
+  },
+
+  async resolveDraft(resolution) {
+    const guard = this._guard;
+    const draft = this._draft;
+    if (!draft || !draft.confirm || !store.isCurrentScope(draft.scope)) return;
+    guard.invalidate();
+    const op = guard.capture();
+    if (!guard.isCurrent(op)) return;
+    const confirm = draft.confirm;
+    const fid = draft.frozen ? draft.frozen.family_id : draft.scope.familyId;
+    this.setData({ state: "SAVING", processing: true, statusText: "正在入库", confirm: null, confirmHint: "" });
+    try {
+      const result = await guard.run(op, (hooks) =>
+        resolveRecord(fid, confirm.token, resolution, confirm.key2, {
+          isCancelled: hooks.isCancelled,
+        })
+      );
+      if (guard.scopeChanged(op)) {
+        this.clearForScopeChange();
+        return;
+      }
+      if (!guard.isCurrent(op)) return;
+      this._draft = null;
+      this.setData({
+        state: "SUCCESS",
+        processing: false,
+        result,
+        statusText: resultText(result),
+        secondaryText: draft.frozen ? draft.frozen.transcript : "",
+        primaryLabel: result && result.operation === "delete" ? "撤销" : "修改",
+        secondaryLabel: "完成",
+        restored: false,
+        steps: [],
+      });
+    } catch (err) {
+      if (guard.scopeChanged(op)) {
+        this.clearForScopeChange();
+        return;
+      }
+      if (!guard.isCurrent(op)) return;
+      if (err instanceof ApiError && err.code === "RECORD_CONFIRM_EXPIRED") {
+        draft.confirm = null;
+        showNotice("确认已失效，请重新说一遍");
+        this.setData({ state: "READY", processing: false, confirm: null, statusText: "", secondaryText: "确认已失效，请重新说一遍" });
+        return;
+      }
+      this.fail(err, draft);
+    }
+  },
+
+  /** SUCCESS 主按钮：create/move 为「修改」跳 item-edit；delete 为「撤销」恢复 */
+  onResultPrimary() {
+    const r = this.data.result;
+    if (!r || !r.item || this.data.processing) return;
+    const fid = this._sessionScope && this._sessionScope.familyId;
+    if (r.operation === "delete") {
+      this.undoDelete(r, fid);
+      return;
+    }
+    wx.navigateTo({ url: `/pages/item-edit/index?id=${r.item.id}&family_id=${fid}` });
+  },
+  async undoDelete(result, fid) {
+    if (this.data.restored) return;
+    this.setData({ processing: true });
+    try {
+      await request({
+        path: `/items/${result.item.id}/restore?family_id=${fid}&expected_version=${result.item.version}`,
+        method: "POST",
+        data: {},
+      });
+      showNotice("已恢复");
+      this.setData({
+        restored: true,
+        processing: false,
+        statusText: `「${result.item.name}」已恢复`,
+        primaryLabel: "",
+      });
+    } catch (err) {
+      this.setData({ processing: false });
+      showNotice(err && err.message ? err.message : "恢复失败，请稍后到详情页重试");
+    }
+  },
+
   onRetry() {
+    if (this.data.state === "SUCCESS") {
+      this.onResultPrimary();
+      return;
+    }
     const guard = this._guard;
     if (!guard.isFrameCurrent(guard.frame()) || this.data.processing) return;
     if (!this._authFailed && store.user && !store.currentFamilyId) {

@@ -3,6 +3,7 @@
   "disableScroll": true,
   "usingComponents": {
     "hold-to-talk": "/components/hold-to-talk/index",
+    "item-card": "/components/item-card/index",
     "status-panel": "/components/status-panel/index",
     "notice-panel": "/components/notice-panel/index"
   }

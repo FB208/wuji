@@ -65,6 +65,10 @@ def record_failed(message: str = "入库失败，请重试") -> AppError:
     return AppError("RECORD_FAILED", message, status_code=500, retryable=True)
 
 
+def record_confirm_expired(message: str = "确认已失效，请重新录入") -> AppError:
+    return AppError("RECORD_CONFIRM_EXPIRED", message, status_code=410, retryable=False)
+
+
 def search_failed(message: str = "查找失败，请重试") -> AppError:
     return AppError("SEARCH_FAILED", message, status_code=502, retryable=True)
 

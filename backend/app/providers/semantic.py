@@ -79,7 +79,8 @@ class CandidatesOut(_StrictBase):
 
 
 class RecordJudgeOut(_StrictBase):
-    operation: Literal["create", "move"]
+    operation: Literal["create", "move", "delete", "confirm"]
+    action: Optional[Literal["move", "delete"]] = None
     target_item_id: Optional[PosInt]
     name: StrictStr = Field(max_length=128)
     location_text: StrictStr = Field(max_length=255)
@@ -315,14 +316,19 @@ class SemanticProvider:
         op = result.operation
         candidates = _dedupe(result.candidate_item_ids)
         logger.info(
-            "入库判断 transcript=%r operation=%s name=%r location=%r",
-            transcript, op, result.name, result.location_text,
+            "入库判断 transcript=%r operation=%s action=%s name=%r location=%r",
+            transcript, op, result.action, result.name, result.location_text,
         )
         # 描述信息不足（如与收纳无关的内容）是 LLM 的合法响应，单独成码区别于契约违规。
-        # 按原始 operation 判定：create 要求名称+位置，move 只要求新位置（名称可为空保留原名）
-        if not result.location_text.strip() or (op == "create" and not result.name.strip()):
+        # create 要求名称+位置；move 要求新位置（名称可空保留原名）；delete/confirm 不要求文字字段。
+        if (op in ("create", "move") and not result.location_text.strip()) or (
+            op == "create" and not result.name.strip()
+        ):
             logger.warning("描述信息不足 transcript=%r raw=%s", transcript, raw)
             raise record_unclear()
+        if op != "confirm" and result.action is not None:
+            logger.warning("入库判断被拒：非 confirm 携带 action raw=%s", raw)
+            raise record_parse_failed()
         out: dict[str, Any] | None = None
         if op == "create":
             if result.target_item_id is not None or candidates:
@@ -330,6 +336,7 @@ class SemanticProvider:
                 raise record_parse_failed()
             out = {
                 "operation": "create",
+                "action": None,
                 "target_item_id": None,
                 "name": result.name.strip(),
                 "location_text": result.location_text.strip(),
@@ -342,6 +349,7 @@ class SemanticProvider:
             if result.target_item_id not in allowed:
                 out = {
                     "operation": "create",
+                    "action": None,
                     "target_item_id": None,
                     "name": result.name.strip(),
                     "location_text": result.location_text.strip(),
@@ -350,11 +358,43 @@ class SemanticProvider:
             else:
                 out = {
                     "operation": "move",
+                    "action": None,
                     "target_item_id": result.target_item_id,
                     "name": result.name.strip(),
                     "location_text": result.location_text.strip(),
                     "candidate_item_ids": [result.target_item_id],
                 }
+        elif op == "delete":
+            if result.target_item_id is None or candidates != [result.target_item_id]:
+                logger.warning("入库判断被拒：delete 目标与候选不一致 raw=%s", raw)
+                raise record_parse_failed()
+            if result.target_item_id not in allowed:
+                logger.warning("入库判断被拒：delete 目标不在候选集 raw=%s", raw)
+                raise record_parse_failed()
+            out = {
+                "operation": "delete",
+                "action": None,
+                "target_item_id": result.target_item_id,
+                "name": result.name.strip(),
+                "location_text": result.location_text.strip(),
+                "candidate_item_ids": [result.target_item_id],
+            }
+        elif op == "confirm":
+            if result.target_item_id is not None:
+                logger.warning("入库判断被拒：confirm 携带 target raw=%s", raw)
+                raise record_parse_failed()
+            valid = [i for i in candidates if i in allowed]
+            if not valid:
+                logger.warning("入库判断被拒：confirm 候选为空或出界 raw=%s", raw)
+                raise record_parse_failed()
+            out = {
+                "operation": "confirm",
+                "action": result.action,
+                "target_item_id": None,
+                "name": result.name.strip(),
+                "location_text": result.location_text.strip(),
+                "candidate_item_ids": valid,
+            }
         if out is None:
             raise record_parse_failed()
         return out

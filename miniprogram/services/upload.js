@@ -77,4 +77,21 @@ async function recordItem(familyId, imageToken, transcript, idempotencyKey, opti
   });
 }
 
-module.exports = { uploadImage, transcribeAudio, recordItem };
+// 入库确认：LLM 返回 confirm 后，携带 record_token 与用户选择再次调用（不再判语义）
+async function resolveRecord(familyId, recordToken, resolution, idempotencyKey, options = {}) {
+  const ref = await request({
+    path: "/items/record",
+    method: "POST",
+    data: { family_id: familyId, record_token: recordToken, resolution },
+    idempotencyKey,
+    isCancelled: options.isCancelled,
+    timeout: options.timeout,
+  });
+  return pollTask(ref.task_id, {
+    isCancelled: options.isCancelled,
+    onStage: options.onStage,
+    timeoutMs: 60000,
+  });
+}
+
+module.exports = { uploadImage, transcribeAudio, recordItem, resolveRecord };

@@ -44,8 +44,14 @@ function env(overrides = {}) {
     uploadImage: (fid, p, o) => { calls.upload.push({ fid, p }); return overrides.upload ? overrides.upload({ fid, p }) : Promise.resolve({ image_token: "img1" }); },
     transcribeAudio: (p, o) => { calls.transcribe.push(p); return overrides.transcribe ? overrides.transcribe(p) : Promise.resolve({ transcript: "t" }); },
     recordItem: (fid, imageToken, transcript, key, o) => {
-      calls.req.push({ path: "/items/record", method: "POST", data: { family_id: fid, image_token: imageToken, transcript }, key });
-      return overrides.request ? overrides.request(o) : Promise.resolve({});
+      const reqData = { family_id: fid, image_token: imageToken, transcript };
+      calls.req.push({ path: "/items/record", method: "POST", data: reqData, key });
+      return overrides.request ? overrides.request({ data: reqData }) : Promise.resolve({});
+    },
+    resolveRecord: (fid, recordToken, resolution, key, o) => {
+      const reqData = { family_id: fid, record_token: recordToken, resolution };
+      calls.req.push({ path: "/items/record", method: "POST", data: reqData, key });
+      return overrides.request ? overrides.request({ data: reqData }) : Promise.resolve({});
     },
   };
   let def;
@@ -66,7 +72,7 @@ function env(overrides = {}) {
 }
 async function boot(e) { e.page.onShow(); await flush(); }
 
-test("A 双media并行才一次POST+999/1000ms边界", async () => {
+test("A 双media并行才一次POST+完成按钮跳home", async () => {
   const d1 = deferred(), d2 = deferred();
   const e = env({ upload: () => d1.p, transcribe: () => d2.p });
   await boot(e);
@@ -83,9 +89,9 @@ test("A 双media并行才一次POST+999/1000ms边界", async () => {
   await flush();
   assert.equal(e.calls.req.length, 1);
   assert.equal(e.page.data.state, "SUCCESS");
-  e.clock.advance(999);
+  e.clock.advance(2000);
   assert.equal(e.calls.switchTab.length, 0);
-  e.clock.advance(1);
+  e.page.onSecondary();
   assert.equal(e.calls.switchTab.length, 1);
 });
 test("B POST失败retry整body同key+无重复media；hide/show保图", async () => {
@@ -192,6 +198,156 @@ test("E3 相册回调在scope变化后丢弃", async () => {
   picker.current.success({ tempFiles: [{ tempFilePath: "alb4.jpg" }] });
   assert.equal(e.page.data.state, "CAMERA");
   assert.equal(e.page.data.photoPath, "");
+});
+function confirmResult(over = {}) {
+  return {
+    operation: "confirm",
+    record_token: "rt1",
+    action: "move",
+    name: "椅子",
+    location_text: "卧室",
+    candidates: [
+      { id: 5, name: "椅子", location_text: "客厅", image_url: "u1" },
+      { id: 8, name: "椅子", location_text: "书房", image_url: "u2" },
+    ],
+    ...over,
+  };
+}
+
+test("G confirm判定→CONFIRM态渲染候选", async () => {
+  const e = env({ request: () => Promise.resolve(confirmResult()) });
+  await boot(e);
+  e.page.takePhoto();
+  e.page.onRecordFinish({ detail: { tempFilePath: "a1.m4a" } });
+  await flush();
+  assert.equal(e.page.data.state, "CONFIRM");
+  assert.equal(e.page.data.confirm.candidates.length, 2);
+  assert.match(e.page.data.confirmHint, /椅子/);
+});
+test("H CONFIRM点选候选→resolve移位→SUCCESS文案+修改入口", async () => {
+  const e = env({
+    request: (o) => {
+      if (o.data && o.data.resolution) {
+        return Promise.resolve({
+          operation: "move",
+          item: { id: 5, name: "椅子", location_text: "卧室", version: 2 },
+          previous: { location_text: "客厅" },
+        });
+      }
+      return Promise.resolve(confirmResult());
+    },
+  });
+  await boot(e);
+  e.page.takePhoto();
+  e.page.onRecordFinish({ detail: { tempFilePath: "a1.m4a" } });
+  await flush();
+  e.page.onPickCandidate({ detail: { item: { id: 5, name: "椅子", location_text: "客厅", image_url: "u1" } } });
+  await flush();
+  assert.equal(e.page.data.state, "SUCCESS");
+  assert.deepEqual(e.calls.req[1].data.resolution, { item_id: 5 });
+  assert.notEqual(e.calls.req[1].key, e.calls.req[0].key);
+  assert.match(e.page.data.statusText, /椅子/);
+  assert.match(e.page.data.statusText, /客厅/);
+  assert.match(e.page.data.statusText, /卧室/);
+  assert.equal(e.page.data.primaryLabel, "修改");
+});
+test("I CONFIRM点新增→resolution {create:true}", async () => {
+  const e = env({
+    request: (o) => {
+      if (o.data && o.data.resolution) {
+        return Promise.resolve({
+          operation: "create",
+          item: { id: 9, name: "椅子", location_text: "卧室", version: 1 },
+          previous: null,
+        });
+      }
+      return Promise.resolve(confirmResult({ action: null }));
+    },
+  });
+  await boot(e);
+  e.page.takePhoto();
+  e.page.onRecordFinish({ detail: { tempFilePath: "a1.m4a" } });
+  await flush();
+  e.page.onConfirmCreate();
+  await flush();
+  assert.equal(e.page.data.state, "SUCCESS");
+  assert.deepEqual(e.calls.req[1].data.resolution, { create: true });
+  assert.match(e.page.data.statusText, /新增至「卧室」/);
+});
+test("J CONFIRM取消→回READY保留照片可重录", async () => {
+  const e = env({ request: () => Promise.resolve(confirmResult()) });
+  await boot(e);
+  e.page.takePhoto();
+  e.page.onRecordFinish({ detail: { tempFilePath: "a1.m4a" } });
+  await flush();
+  assert.equal(e.page.data.state, "CONFIRM");
+  e.page.onConfirmCancel();
+  assert.equal(e.page.data.state, "READY");
+  assert.equal(e.page.data.photoPath, "cam1.jpg");
+  assert.equal(e.page.data.confirm, null);
+});
+test("K resolve返回RECORD_CONFIRM_EXPIRED→回READY", async () => {
+  const e = env({
+    request: (o) => {
+      if (o.data && o.data.resolution) {
+        return Promise.reject(new e.apiMod.ApiError({ code: "RECORD_CONFIRM_EXPIRED", message: "确认已失效", retryable: false }));
+      }
+      return Promise.resolve(confirmResult());
+    },
+  });
+  await boot(e);
+  e.page.takePhoto();
+  e.page.onRecordFinish({ detail: { tempFilePath: "a1.m4a" } });
+  await flush();
+  e.page.onPickCandidate({ detail: { item: { id: 5, name: "椅子", location_text: "客厅", image_url: "u1" } } });
+  await flush();
+  assert.equal(e.page.data.state, "READY");
+  assert.equal(e.page.data.photoPath, "cam1.jpg");
+});
+test("L delete结果→撤销→restore请求后显示已恢复", async () => {
+  const e = env({
+    request: (o) => {
+      if (o.path && /restore/.test(o.path)) return Promise.resolve({ id: 5 });
+      if (o.data && o.data.image_token) {
+        return Promise.resolve({
+          operation: "delete",
+          item: { id: 5, name: "拖把", location_text: "阳台", version: 2 },
+          previous: { location_text: "阳台" },
+        });
+      }
+      return Promise.resolve({});
+    },
+  });
+  await boot(e);
+  e.page.takePhoto();
+  e.page.onRecordFinish({ detail: { tempFilePath: "a1.m4a" } });
+  await flush();
+  assert.equal(e.page.data.state, "SUCCESS");
+  assert.match(e.page.data.statusText, /拖把.*删除/);
+  assert.equal(e.page.data.primaryLabel, "撤销");
+  e.page.onRetry();
+  await flush();
+  const restoreReq = e.calls.req.find((r) => /restore/.test(r.path));
+  assert.ok(restoreReq);
+  assert.match(restoreReq.path, /family_id=10/);
+  assert.match(restoreReq.path, /expected_version=2/);
+  assert.equal(e.page.data.restored, true);
+  assert.match(e.page.data.statusText, /已恢复/);
+  assert.equal(e.page.data.primaryLabel, "");
+  e.page.onSecondary();
+  assert.equal(e.calls.switchTab.length, 1);
+});
+test("M SUCCESS无draft残留：hide/show回CAMERA", async () => {
+  const e = env({ request: () => Promise.resolve({ operation: "create", item: { id: 1, name: "x", location_text: "y", version: 1 }, previous: null }) });
+  await boot(e);
+  e.page.takePhoto();
+  e.page.onRecordFinish({ detail: { tempFilePath: "a1.m4a" } });
+  await flush();
+  assert.equal(e.page.data.state, "SUCCESS");
+  e.page.onHide();
+  e.page.onShow();
+  await flush();
+  assert.equal(e.page.data.state, "CAMERA");
 });
 test("模板保留原class/camera与record绑定", async () => {
   const wxml = (await import("node:fs")).readFileSync(path.join(MP_DIR, "pages/record/index.wxml"), "utf8");

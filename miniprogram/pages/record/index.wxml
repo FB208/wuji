@@ -34,8 +34,8 @@
   </view>
 
   <!-- 引导区（文档 9.3） -->
-  <view class="guide">{{secondaryText || '说清楚是什么，放在哪里。'}}</view>
-  <view class="guide text-hint">照片仅用于保存物品外观；语音仅转写为文字，不会保存。</view>
+  <view class="guide">{{state === 'CONFIRM' ? confirmHint : (secondaryText || '说清楚是什么，放在哪里。')}}</view>
+  <view wx:if="{{state !== 'CONFIRM'}}" class="guide text-hint">照片仅用于保存物品外观；语音仅转写为文字，不会保存。</view>
 
   <!-- 主操作区 -->
   <view class="main-action">
@@ -58,13 +58,35 @@
     />
   </view>
 
+  <!-- 待确认区：LLM 无法唯一确定时让用户点选候选物品 -->
+  <view wx:if="{{state === 'CONFIRM' && confirm}}" class="confirm-area">
+    <scroll-view scroll-y class="confirm-list">
+      <item-card
+        wx:for="{{confirm.candidates}}"
+        wx:key="id"
+        item="{{item}}"
+        mode="list"
+        bind:tap="onPickCandidate"
+      />
+      <view wx:if="{{!confirm.candidates.length}}" class="confirm-empty">候选物品已不存在</view>
+    </scroll-view>
+    <view class="confirm-actions">
+      <view
+        wx:if="{{confirm.action !== 'delete'}}"
+        class="confirm-btn brutal-pressable"
+        bindtap="onConfirmCreate"
+      >都不是，新增一条</view>
+      <view class="confirm-btn plain brutal-pressable" bindtap="onConfirmCancel">取消</view>
+    </view>
+  </view>
+
   <!-- 状态遮罩：上传 / 入库 / 完成 / 失败 -->
   <status-panel
     visible="{{state === 'UPLOADING' || state === 'SAVING' || state === 'SUCCESS' || state === 'FAILED'}}"
     text="{{statusText}}"
     steps="{{steps}}"
     secondary-text="{{secondaryText}}"
-    error="{{state === 'FAILED'}}"
+    error="{{state === 'FAILED' || state === 'SUCCESS'}}"
     retry-text="{{primaryLabel}}"
     secondary-retry-text="{{secondaryLabel}}"
     bind:retry="onRetry"

@@ -10,9 +10,11 @@ from app.core.errors import (
     family_forbidden,
     image_invalid,
     image_upload_failed,
+    not_found,
     record_failed,
     record_parse_failed,
     record_attempt_superseded,
+    record_confirm_expired,
     version_conflict,
 )
 from app.core.logging import get_logger
@@ -117,6 +119,26 @@ def _item_out(item: Item) -> dict:
             if item.updated_at
             else None
         ),
+    }
+
+
+def _brief_out(item: Item) -> dict:
+    """确认候选用的简报字段。"""
+    return {
+        "id": item.id,
+        "name": item.name,
+        "location_text": item.location_text,
+        "image_url": item.image_url,
+    }
+
+
+def _snapshot(item: Item) -> dict:
+    """写前快照：move/delete 结果携带，供前端展示与恢复参考。"""
+    return {
+        "name": item.name,
+        "location_text": item.location_text,
+        "image_url": item.image_url,
+        "record_text": item.record_text,
     }
 
 
@@ -248,7 +270,7 @@ async def _execute_with_retry(
     judge = await semantic_provider.judge_record(transcript, summary, budget=budget)
     try:
         _emit(on_stage, "writing")
-        return await _finalize(
+        return await _dispatch_finalize(
             db, user_id, family_id, idem_key, lease_token,
             revision_seen, judge, transcript, image, registration_id,
         )
@@ -272,7 +294,7 @@ async def _execute_with_retry(
         raise
     try:
         _emit(on_stage, "writing")
-        return await _finalize(
+        return await _dispatch_finalize(
             db, user_id, family_id, idem_key, lease_token,
             revision_seen, judge, transcript, image, registration_id,
         )
@@ -280,7 +302,7 @@ async def _execute_with_retry(
         raise version_conflict("家庭数据已变化，请重试")
 
 
-async def _finalize(
+async def _dispatch_finalize(
     db: AsyncSession,
     user_id: int,
     family_id: int,
@@ -292,6 +314,30 @@ async def _finalize(
     image: dict,
     registration_id: int,
 ) -> dict:
+    """judge 为 confirm 时走待确认短路，不写物品只签发 record_token。"""
+    if judge["operation"] == "confirm":
+        return await _finalize_confirm(
+            db, user_id, family_id, idem_key, lease_token,
+            revision_seen, judge, transcript, image,
+        )
+    return await _finalize(
+        db, user_id, family_id, idem_key, lease_token,
+        revision_seen, judge, transcript, image, registration_id,
+    )
+
+
+async def _finalize_confirm(
+    db: AsyncSession,
+    user_id: int,
+    family_id: int,
+    idem_key: str,
+    lease_token: str,
+    revision_seen: int,
+    judge: dict,
+    transcript: str,
+    image: dict,
+) -> dict:
+    """判定无法唯一确定：不发物品写操作，签发 record_token 并把候选写进幂等结果。"""
     async with db.begin():
         _, family = await _lock_scope(db, user_id, family_id)
         record = await repos.get_idempotency_for_update(db, user_id, idem_key)
@@ -299,19 +345,76 @@ async def _finalize(
         if family.revision != revision_seen:
             raise _FamilyRevisionChanged()
 
+        candidates = await repos.list_active_items_by_ids(
+            db, family_id, judge["candidate_item_ids"]
+        )
+        settings = get_settings()
+        record_token = create_signed_token(
+            {
+                "fid": family_id,
+                "key": image["object_key"],
+                "url": image["image_url"],
+                "transcript": transcript,
+                "name": judge["name"],
+                "location": judge["location_text"],
+                "action": judge["action"],
+                "cands": [i.id for i in candidates],
+            },
+            ttl_seconds=settings.image_token_ttl_minutes * 60,
+            purpose="record_confirm",
+        )
+        result = {
+            "operation": "confirm",
+            "record_token": record_token,
+            "action": judge["action"],
+            "name": judge["name"],
+            "location_text": judge["location_text"],
+            "candidates": [_brief_out(i) for i in candidates],
+        }
+        idempotency_service.complete(record, result)
+        logger.info(
+            "入库待确认 user=%d family=%d action=%s cands=%s",
+            user_id, family_id, judge["action"], judge["candidate_item_ids"],
+        )
+        return result
+
+
+async def _finalize(
+    db: AsyncSession,
+    user_id: int,
+    family_id: int,
+    idem_key: str,
+    lease_token: str,
+    revision_seen: int | None,
+    judge: dict,
+    transcript: str,
+    image: dict,
+    registration_id: int,
+) -> dict:
+    async with db.begin():
+        _, family = await _lock_scope(db, user_id, family_id)
+        record = await repos.get_idempotency_for_update(db, user_id, idem_key)
+        idempotency_service.assert_lease_current(record, lease_token)
+        if revision_seen is not None and family.revision != revision_seen:
+            raise _FamilyRevisionChanged()
+
         operation = judge["operation"]
         name = judge["name"]
         location_text = judge["location_text"]
 
         target: Item | None = None
-        if operation == "move":
+        if operation in ("move", "delete"):
             target_id = _parse_target_item_id(judge.get("target_item_id"))
             if target_id is not None:
                 target = await repos.get_active_item_for_update(db, family_id, target_id)
             if target is None:
-                # move 目标无效或不属于当前家庭组时按 create 处理（文档 4.5）
-                operation = "create"
+                if operation == "move":
+                    # move 目标无效或不属于当前家庭组时按 create 处理（文档 4.5）
+                    operation = "create"
+                else:
+                    raise not_found("物品记录不存在")
 
+        previous: dict | None = None
         if operation == "create":
             _validate_name_location(name, location_text, name_required=True)
             settings = get_settings()
@@ -328,9 +431,10 @@ async def _finalize(
                 version=1,
             )
             db.add(item)
-        else:
+        elif operation == "move":
             assert target is not None
             _validate_name_location(name, location_text, name_required=False)
+            previous = _snapshot(target)
             old_image_url = target.image_url
             target.location_text = location_text
             target.record_text = transcript
@@ -341,28 +445,146 @@ async def _finalize(
             if old_image_url != image["image_url"]:
                 await _retire_image(db, old_image_url)
             item = target
+        else:
+            assert operation == "delete" and target is not None
+            previous = _snapshot(target)
+            target.status = 0
+            target.deleted_at = utcnow()
+            target.version += 1
+            await _retire_image(db, target.image_url)
+            item = target
 
         await db.flush()
 
-        registration = _check_image_registration(
-            await repos.get_uploaded_image_by_key_for_update(db, image["object_key"]),
-            family_id,
-            for_bind=True,
-        )
-        registration.bound_item_id = item.id
-        registration.delete_after = None
+        if operation != "delete":
+            registration = _check_image_registration(
+                await repos.get_uploaded_image_by_key_for_update(db, image["object_key"]),
+                family_id,
+                for_bind=True,
+            )
+            registration.bound_item_id = item.id
+            registration.delete_after = None
 
         family.revision += 1
         await db.flush()
         await db.refresh(item)
 
-        result = {"operation": operation, "item": _item_out(item)}
+        result = {"operation": operation, "item": _item_out(item), "previous": previous}
         idempotency_service.complete(record, result)
         logger.info(
             "入库完成 user=%d family=%d operation=%s item_id=%d",
             user_id, family_id, operation, item.id,
         )
         return result
+
+
+async def resolve_record(
+    db: AsyncSession,
+    user_id: int,
+    family_id: int,
+    record_token: str,
+    resolution: dict,
+    idem_key: str | None,
+    on_stage: StageCallback | None = None,
+) -> dict:
+    """确认入库：验签 record_token，按用户选择直接落库（不再调用语义服务）。"""
+    logger.info("入库确认 user=%d family=%d resolution=%s", user_id, family_id, resolution)
+    key = idempotency_service.validate_idem_key(idem_key)
+    req_hash = idempotency_service.request_hash(
+        "record",
+        {"family_id": family_id, "record_token": record_token, "resolution": resolution},
+    )
+    async with db.begin():
+        _, family = await _lock_scope(db, user_id, family_id)
+        reserved = await idempotency_service.reserve(
+            db, user_id, family_id, "record", key, req_hash
+        )
+        if isinstance(reserved, dict):
+            return reserved
+
+        body = verify_signed_token(record_token, purpose="record_confirm")
+        _REQUIRED = ("key", "url", "transcript", "name", "location")
+        if (
+            body is None
+            or int(body.get("fid", 0)) != family_id
+            or any(k not in body for k in _REQUIRED)
+        ):
+            raise record_confirm_expired()
+
+        image = {"object_key": body["key"], "image_url": body["url"]}
+        transcript = body["transcript"]
+        if resolution.get("create"):
+            judge = {
+                "operation": "create",
+                "target_item_id": None,
+                "name": body["name"],
+                "location_text": body["location"],
+                "candidate_item_ids": [],
+            }
+        else:
+            item_id = resolution.get("item_id")
+            if item_id not in (body.get("cands") or []):
+                raise AppError("VALIDATION_ERROR", "选择不在候选项中", status_code=422)
+            judge = {
+                "operation": body["action"] or "move",
+                "target_item_id": item_id,
+                "name": body["name"],
+                "location_text": body["location"],
+                "candidate_item_ids": [item_id],
+            }
+
+        if judge["operation"] != "delete":
+            registration = await repos.get_uploaded_image_by_key_for_update(
+                db, image["object_key"]
+            )
+            if (
+                registration is None
+                or registration.family_id != family_id
+                or registration.delete_state != "none"
+                or registration.bound_item_id is not None
+            ):
+                raise record_confirm_expired()
+        lease_token = reserved.lease_token
+
+    if not await idempotency_service.renew_lease(db, user_id, key, lease_token):
+        raise record_attempt_superseded()
+    try:
+        _emit(on_stage, "writing")
+        return await _finalize(
+            db, user_id, family_id, key, lease_token,
+            None, judge, transcript, image, 0,
+        )
+    except AppError as exc:
+        await idempotency_service.mark_failed(db, user_id, key, lease_token, exc)
+        raise
+    except Exception as exc:
+        await idempotency_service.mark_failed(db, user_id, key, lease_token, record_failed())
+        logger.error("入库确认写库失败：%s", exc)
+        raise record_failed() from exc
+
+
+async def restore_item(
+    db: AsyncSession, user_id: int, family_id: int, item_id: int, expected_version: int
+) -> dict:
+    """恢复软删除物品；图片登记仍在延迟清理期时一并复位。"""
+    async with db.begin():
+        _, family = await _lock_scope(db, user_id, family_id)
+        item = await repos.get_deleted_item_for_update(db, family_id, item_id)
+        if item is None:
+            raise not_found("物品记录不存在")
+        if item.version != expected_version:
+            raise version_conflict()
+        item.status = 1
+        item.deleted_at = None
+        item.version += 1
+        registration = await repos.get_uploaded_image_by_url(db, item.image_url)
+        if registration is not None and registration.delete_state == "pending_delete":
+            registration.delete_state = "none"
+            registration.delete_after = None
+        family.revision += 1
+        await db.flush()
+        await db.refresh(item)
+        return _item_out(item)
 
 
 # ---------- 物品维护（文档 6 章） ----------

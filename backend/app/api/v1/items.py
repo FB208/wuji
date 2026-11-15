@@ -104,7 +104,14 @@ async def record_item(
     task = tasks.create("record", user.id, idem_key=idempotency_key)
     asyncio.create_task(
         _record_job(
-            task.id, user.id, body.family_id, body.image_token, body.transcript, idempotency_key
+            task.id,
+            user.id,
+            body.family_id,
+            body.image_token,
+            body.transcript,
+            body.record_token,
+            body.resolution.model_dump(exclude_none=True) if body.resolution else None,
+            idempotency_key,
         )
     )
     return ok(request, {"task_id": task.id})
@@ -114,16 +121,24 @@ async def _record_job(
     task_id: str,
     user_id: int,
     family_id: int,
-    image_token: str,
-    transcript: str,
+    image_token: str | None,
+    transcript: str | None,
+    record_token: str | None,
+    resolution: dict | None,
     idem_key: str | None,
 ) -> None:
     try:
         async with SessionLocal() as db:
-            data = await record_service.record_item(
-                db, user_id, family_id, image_token, transcript, idem_key,
-                on_stage=lambda s, d="": tasks.set_stage(task_id, s, d),
-            )
+            if record_token is not None:
+                data = await record_service.resolve_record(
+                    db, user_id, family_id, record_token, resolution, idem_key,
+                    on_stage=lambda s, d="": tasks.set_stage(task_id, s, d),
+                )
+            else:
+                data = await record_service.record_item(
+                    db, user_id, family_id, image_token, transcript, idem_key,
+                    on_stage=lambda s, d="": tasks.set_stage(task_id, s, d),
+                )
     except Exception as exc:
         tasks.fail(task_id, exc)
         return
@@ -249,3 +264,16 @@ async def delete_item(
 ):
     await record_service.delete_item(db, user.id, family_id, item_id, expected_version)
     return ok(request, {"deleted": True})
+
+
+@router.post("/items/{item_id}/restore")
+async def restore_item(
+    request: Request,
+    item_id: int,
+    family_id: int = Query(...),
+    expected_version: int = Query(..., ge=1),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    data = await record_service.restore_item(db, user.id, family_id, item_id, expected_version)
+    return ok(request, data)

@@ -91,6 +91,18 @@ async def get_active_item_for_update(
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
+async def get_deleted_item_for_update(
+    db: AsyncSession, family_id: int, item_id: int
+) -> Item | None:
+    stmt = (
+        select(Item)
+        .where(Item.family_id == family_id, Item.id == item_id, Item.status == 0)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
 async def list_active_items(db: AsyncSession, family_id: int) -> list[Item]:
     stmt = _active_items_stmt(family_id).order_by(Item.updated_at.desc())
     return list((await db.execute(stmt)).scalars().all())

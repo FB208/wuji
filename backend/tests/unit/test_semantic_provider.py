@@ -131,6 +131,78 @@ async def test_record_unclear_not_parse_failed(raw):
     assert ei.value.retryable is False
 
 
+async def test_record_delete_outcomes():
+    with patch.object(sem.SemanticProvider, "_chat", new=AsyncMock(
+        return_value={"operation": "delete", "action": None, "target_item_id": 2, "name": "", "location_text": "", "candidate_item_ids": [2]}
+    )):
+        out = await sem.semantic_provider.judge_record("t", [_item(2)])
+        assert out["operation"] == "delete" and out["target_item_id"] == 2
+        assert out["candidate_item_ids"] == [2]
+    # delete 允许 name/location 为空，不触发 RECORD_UNCLEAR
+    with patch.object(sem.SemanticProvider, "_chat", new=AsyncMock(
+        return_value={"operation": "delete", "target_item_id": 1, "name": "", "location_text": "", "candidate_item_ids": [1]}
+    )):
+        out = await sem.semantic_provider.judge_record("t", [_item(1)])
+        assert out["operation"] == "delete"
+
+
+@pytest.mark.parametrize("raw", [
+    # delete 目标出界：删除没有合理降级，按契约违规
+    {"operation": "delete", "target_item_id": 999, "name": "", "location_text": "", "candidate_item_ids": [999]},
+    # delete 目标与候选不一致
+    {"operation": "delete", "target_item_id": 1, "name": "", "location_text": "", "candidate_item_ids": [2]},
+    # 非 confirm 携带 action
+    {"operation": "move", "action": "delete", "target_item_id": 1, "name": "", "location_text": "l", "candidate_item_ids": [1]},
+    {"operation": "create", "action": "move", "target_item_id": None, "name": "n", "location_text": "l", "candidate_item_ids": []},
+    {"operation": "delete", "action": "move", "target_item_id": 1, "name": "", "location_text": "", "candidate_item_ids": [1]},
+])
+async def test_record_delete_schema_rejected(raw):
+    with patch.object(sem.SemanticProvider, "_chat", new=AsyncMock(return_value=raw)):
+        with pytest.raises(AppError) as ei:
+            await sem.semantic_provider.judge_record("t", [_item(1), _item(2)])
+    assert ei.value.code == "RECORD_PARSE_FAILED"
+
+
+async def test_record_confirm_outcomes():
+    # action=move：移位已定，多候选待选；出界候选被过滤
+    with patch.object(sem.SemanticProvider, "_chat", new=AsyncMock(
+        return_value={"operation": "confirm", "action": "move", "target_item_id": None, "name": "椅子", "location_text": "卧室", "candidate_item_ids": [1, 999, 2]}
+    )):
+        out = await sem.semantic_provider.judge_record("t", [_item(1), _item(2)])
+        assert out["operation"] == "confirm" and out["action"] == "move"
+        assert out["candidate_item_ids"] == [1, 2]
+    # action=delete：处置已定，多候选待选
+    with patch.object(sem.SemanticProvider, "_chat", new=AsyncMock(
+        return_value={"operation": "confirm", "action": "delete", "target_item_id": None, "name": "充电器", "location_text": "", "candidate_item_ids": [2]}
+    )):
+        out = await sem.semantic_provider.judge_record("t", [_item(1), _item(2)])
+        assert out["operation"] == "confirm" and out["action"] == "delete"
+    # action=null：行为未定
+    with patch.object(sem.SemanticProvider, "_chat", new=AsyncMock(
+        return_value={"operation": "confirm", "action": None, "target_item_id": None, "name": "椅子", "location_text": "卧室", "candidate_item_ids": [1]}
+    )):
+        out = await sem.semantic_provider.judge_record("t", [_item(1)])
+        assert out["operation"] == "confirm" and out["action"] is None
+        assert out["candidate_item_ids"] == [1]
+
+
+@pytest.mark.parametrize("raw", [
+    # confirm 携带 target
+    {"operation": "confirm", "action": "move", "target_item_id": 1, "name": "n", "location_text": "l", "candidate_item_ids": [1]},
+    # confirm 候选为空
+    {"operation": "confirm", "action": None, "target_item_id": None, "name": "n", "location_text": "l", "candidate_item_ids": []},
+    # confirm 候选全部出界
+    {"operation": "confirm", "action": "delete", "target_item_id": None, "name": "", "location_text": "", "candidate_item_ids": [999]},
+    # confirm 非法 action
+    {"operation": "confirm", "action": "create", "target_item_id": None, "name": "n", "location_text": "l", "candidate_item_ids": [1]},
+])
+async def test_record_confirm_schema_rejected(raw):
+    with patch.object(sem.SemanticProvider, "_chat", new=AsyncMock(return_value=raw)):
+        with pytest.raises(AppError) as ei:
+            await sem.semantic_provider.judge_record("t", [_item(1), _item(2)])
+    assert ei.value.code == "RECORD_PARSE_FAILED"
+
+
 @pytest.mark.parametrize("raw", [
     {"operation": "move", "target_item_id": True, "name": "", "location_text": "l", "candidate_item_ids": [1]},
     {"operation": "create", "target_item_id": None, "name": "n", "location_text": "l", "candidate_item_ids": ["1"]},
