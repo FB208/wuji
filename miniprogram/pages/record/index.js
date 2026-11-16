@@ -93,8 +93,6 @@ Page({
   onHide() {
     registerNotice(null);
     this._resumePending = this.data.processing || this._resumePending;
-    const holder = this.selectComponent("#h2t");
-    if (holder) holder.interrupt();
     this.onRecordCancel();
     this._guard.hide();
   },
@@ -195,33 +193,37 @@ Page({
   /** 录音失败时保留本轮并提示重新录音。 */
   onRecordError() {
     this.onRecordCancel();
-    this.setData({ secondaryText: "录音失败，请重试" });
+    showNotice("录音失败，请重试");
   },
   /** 麦克风未授权时返回原输入阶段。 */
   onPermissionDenied() {
     this.onRecordCancel();
-    showNotice("需要麦克风权限");
+    showNotice("需要麦克风权限，也可以点击键盘图标输入文字");
   },
   /** 将录音作为首次描述、补充描述或修改要求提交。 */
   onRecordFinish(e) {
     if (!this.active()) return;
     this.onRecordCancel();
-    const event = this.data.state === "MODIFY" ? "revise" : this._draft.sessionId ? "reply" : "start";
+    const event = this.descriptionEvent();
     this.submit({ event, audioPath: e.detail.tempFilePath });
+  },
+  /** 为首次描述、追问和修改选择统一的提交事件。 */
+  descriptionEvent() {
+    return this.data.state === "MODIFY" ? "revise" : this._draft.sessionId ? "reply" : "start";
   },
   /** 更新文字输入。 */
   onTextInput(e) {
     this.setData({ inputText: e.detail.value });
   },
-  /** 提交补充或修改文字，也支持只更换照片。 */
+  /** 提交首次、补充或修改文字，修改阶段也支持只更换照片。 */
   onTextSubmit() {
     if (!this.active()) return;
     const transcript = this.data.inputText.trim();
     if (!transcript && !(this.data.state === "MODIFY" && this._draft.photoPending)) {
-      showNotice("请填写要补充或修改的内容");
+      showNotice(this.data.state === "MODIFY" ? "请输入要修改的内容" : this._draft.sessionId ? "请输入要补充的内容" : "请输入物品、位置或要进行的操作");
       return;
     }
-    this.submit({ event: this.data.state === "MODIFY" ? "revise" : "reply", transcript: transcript || null });
+    this.submit({ event: this.descriptionEvent(), transcript: transcript || null });
   },
   /** 提交用户明确选择的操作。 */
   onOperationSelect(e) {
@@ -236,7 +238,7 @@ Page({
     if (!this.active()) return;
     this.setData({ state: "MODIFY", question: null, inputText: "", secondaryText: "", cameraOpen: false });
   },
-  /** 清空本轮页面数据并开始下一条。 */
+  /** 清空本轮页面数据并打开相机，开始下一条。 */
   onNext() {
     if (!this.active()) return;
     this._guard.invalidate();
@@ -246,7 +248,7 @@ Page({
       photoPending: false, pending: null, key: null, frozen: null, inputState: "INPUT",
     };
     this.setData({
-      state: "INPUT", photoPath: "", cameraOpen: false, cameraError: false, inputText: "",
+      state: "INPUT", photoPath: "", cameraOpen: true, cameraError: false, inputText: "",
       question: null, savedResult: null, statusText: "", secondaryText: "", steps: [],
       primaryLabel: "重新提交", secondaryLabel: "返回输入", micReady: false, micWillCancel: false,
     });

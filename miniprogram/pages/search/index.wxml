@@ -1,90 +1,67 @@
 <view class="search-page">
-  <!-- 重新开始（文档 8.3） -->
-  <view class="toolbar">
-    <view class="clear-btn brutal-pressable" bindtap="onClear">清空</view>
+  <view class="chat-actions" wx:if="{{sessionReady && !noFamily}}">
+    <button size="mini" class="clear-chat-btn" hover-class="clear-chat-btn-pressed" bindtap="clearHistory" aria-label="清空对话" disabled="{{clearing || processing || transcribing || syncingHistory || loadingHistory}}">
+      <view class="weui-icon-outlined-delete"></view>
+    </button>
   </view>
-
-  <!-- 结果区 -->
-  <scroll-view scroll-y class="result-area">
-    <view wx:if="{{busy}}" class="placeholder">正在检查登录状态</view>
-    <view wx:elif="{{noFamily}}" class="placeholder">
-      <view class="prompt-card brutal-card">还没有家庭，请先创建或加入家庭</view>
-      <view class="retry-btn brutal-pressable" bindtap="goHome">回首页</view>
-    </view>
-    <block wx:elif="{{!ready}}">
-      <view class="prompt-card brutal-card error">{{prompt || "请重新登录"}}</view>
-      <view class="retry-btn brutal-pressable" bindtap="onRetry">重试登录</view>
-    </block>
-    <block wx:else>
-    <view wx:if="{{state === 'ready'}}" class="placeholder text-hint">
-      {{prompt || "说出要找的物品，例如“备用路由器放哪了？”"}}
-    </view>
-
-    <view wx:if="{{state === 'searching'}}" class="placeholder">正在查找</view>
-
-    <view wx:if="{{lastQuery && state !== 'searching' && state !== 'ready'}}" class="query-line text-hint">
-      “{{lastQuery}}”
-    </view>
-
-    <block wx:if="{{state === 'found'}}">
-      <view class="result-row">
-        <item-card item="{{items[0]}}" mode="big" bind:tap="onItemTap" />
-        <view class="exclude-btn brutal-pressable" catchtap="onExclude" data-id="{{items[0].id}}">不是这件</view>
-      </view>
-    </block>
-
-    <block wx:if="{{state === 'multiple'}}">
-      <view class="prompt-card brutal-card">{{prompt}}</view>
-      <view class="candidate-list">
-        <view class="result-row" wx:for="{{items}}" wx:key="id">
-          <item-card item="{{item}}" bind:tap="onItemTap" />
-          <view class="exclude-btn brutal-pressable" catchtap="onExclude" data-id="{{item.id}}">不是这件</view>
+  <view wx:if="{{noFamily}}" class="page-action">
+    <button class="retry-btn" bindtap="goHome">回首页</button>
+  </view>
+  <view wx:elif="{{errorText}}" class="page-action">
+    <text class="error-text" selectable>{{errorText}}</text>
+    <button class="retry-btn" bindtap="onRetry">重试</button>
+  </view>
+  <scroll-view
+    class="message-list"
+    scroll-y
+    scroll-into-view="{{scrollTarget}}"
+    upper-threshold="60"
+    bindscrolltoupper="loadHistory"
+    bindscroll="onListScroll"
+    lower-threshold="60"
+    bindscrolltolower="onListBottom"
+  >
+    <view wx:for="{{messages}}" wx:for-item="message" wx:key="id" id="message-{{message.id}}" class="message message-{{message.role}}">
+      <block wx:for="{{message.blocks}}" wx:for-item="block" wx:key="index">
+        <view wx:if="{{block.type === 'text' && message.role === 'assistant'}}" class="message-text markdown-bubble">
+          <markdown-text content="{{block.text}}" />
         </view>
+        <text wx:elif="{{block.type === 'text'}}" class="message-text" selectable>{{block.text}}</text>
+        <view wx:elif="{{block.type === 'item_cards'}}" class="message-cards">
+          <item-card wx:for="{{block.items}}" wx:for-item="card" wx:key="id" item="{{card}}" bind:tap="onItemTap" />
+        </view>
+        <text wx:elif="{{block.type === 'error'}}" class="message-text error-text" selectable>{{block.message}}</text>
+      </block>
+    </view>
+    <view wx:if="{{pendingText}}" class="message message-user">
+      <text class="message-text" selectable>{{pendingText}}</text>
+    </view>
+    <view wx:if="{{draft}}" class="message message-assistant">
+      <view wx:for="{{draft.blocks}}" wx:for-item="block" wx:key="index" class="message-text markdown-bubble">
+        <markdown-text content="{{block.text}}" />
       </view>
-    </block>
-
-    <view wx:if="{{state === 'not_found'}}" class="prompt-card brutal-card">未找到记录，可换个说法。</view>
-
-    <block wx:if="{{state === 'error'}}">
-      <view class="prompt-card brutal-card error">{{prompt}}</view>
-      <view class="retry-btn brutal-pressable" bindtap="onRetry">重新查找</view>
-    </block>
-    </block>
+    </view>
+    <view wx:if="{{(processing || transcribing) && !draft}}" class="message message-assistant">
+      <text class="message-text pending">···</text>
+    </view>
+    <view id="chat-bottom" class="chat-bottom"></view>
   </scroll-view>
 
-  <!-- 输入区：微信式语音/文字切换栏（文档 5.3 / 8.3） -->
-  <view class="input-area">
-    <view class="input-bar">
-      <view class="mode-toggle" bindtap="toggleTextInput">
-        <view class="icon icon-{{showTextInput ? 'mic' : 'kbd'}}"></view>
-      </view>
-      <block wx:if="{{showTextInput}}">
-        <input
-          class="text-input"
-          value="{{textQuery}}"
-          placeholder="输入要找的物品"
-          maxlength="512"
-          confirm-type="search"
-          disabled="{{busy || !ready || state === 'searching'}}"
-          bindinput="onTextInput"
-          bindconfirm="onTextSubmit"
-        />
-        <view class="send-btn brutal-pressable {{busy || !ready || state === 'searching' ? 'disabled' : ''}}" bindtap="onTextSubmit">查找</view>
-      </block>
-      <view wx:else class="h2t-fill">
-        <hold-to-talk
-          id="h2t"
-          compact="{{true}}"
-          idle-text="按住说要找什么"
-          disabled="{{busy || !ready || state === 'searching'}}"
-          bind:recordfinish="onRecordFinish"
-          bind:recorderror="onRecordError"
-          bind:permissiondenied="onPermissionDenied"
-        />
-      </view>
-    </view>
-  </view>
-
+  <voice-text-input
+    id="composer"
+    value="{{textQuery}}"
+    placeholder="输入消息"
+    submit-text="发送"
+    idle-text="按住说话"
+    maxlength="{{2000}}"
+    disabled="{{transcribing || clearing}}"
+    submit-disabled="{{!sessionReady || noFamily || processing}}"
+    bind:input="onTextInput"
+    bind:submit="onTextSubmit"
+    bind:recordfinish="onRecordFinish"
+    bind:recorderror="onRecordError"
+    bind:permissiondenied="onPermissionDenied"
+  />
   <notice-panel
     visible="{{notice && notice.visible}}"
     title="{{notice.title}}"

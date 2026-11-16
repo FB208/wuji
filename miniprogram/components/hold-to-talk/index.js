@@ -16,9 +16,9 @@ Component({
     seconds: 0,
   },
   pageLifetimes: {
+    // 页面隐藏时的中断由外层输入栏统一发起，以便同步其录音状态。
     hide() {
       this._visible = false;
-      this.interrupt();
     },
     show() {
       this._visible = true;

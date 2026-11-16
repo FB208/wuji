@@ -61,10 +61,6 @@ def record_failed(message: str = "入库失败，请重试") -> AppError:
     return AppError("RECORD_FAILED", message, status_code=500, retryable=True)
 
 
-def search_failed(message: str = "查找失败，请重试") -> AppError:
-    return AppError("SEARCH_FAILED", message, status_code=502, retryable=True)
-
-
 def not_found(message: str = "记录不存在") -> AppError:
     return AppError("NOT_FOUND", message, status_code=404)
 
@@ -97,10 +93,6 @@ def idempotency_key_invalid(message: str = "Idempotency-Key 需为 16~128 个字
 
 def semantic_budget_exceeded(message: str = "描述过长或物品过多，请拆分后重试") -> AppError:
     return AppError("SEMANTIC_BUDGET_EXCEEDED", message, status_code=422, retryable=False)
-
-
-def search_context_mismatch(message: str = "查找上下文与家庭组不一致") -> AppError:
-    return AppError("SEARCH_CONTEXT_MISMATCH", message, status_code=409, retryable=False)
 
 
 def ok(request: Request, data: Any) -> dict:

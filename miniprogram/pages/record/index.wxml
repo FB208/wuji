@@ -30,7 +30,6 @@
         </view>
         <text class="candidate-arrow">›</text>
       </view>
-      <view wx:if="{{question.candidates.length}}" class="text-hint">都不是？可以继续说话或输入文字说明。</view>
     </view>
 
     <view wx:if="{{!question || question.status === 'need_photo'}}" class="photo-section">
@@ -49,30 +48,28 @@
         <button wx:else class="mini-btn" bindtap="retake" disabled="{{processing || !sessionReady || state === 'RECORDING'}}">重拍</button>
         <button class="mini-btn secondary-btn" bindtap="chooseFromAlbum" disabled="{{processing || !sessionReady || state === 'RECORDING'}}">从相册选择</button>
       </view>
-      <view wx:if="{{state === 'INPUT'}}" class="text-hint centered">新增需要照片，删除和移位可以直接说话。</view>
     </view>
 
-    <view class="guide">{{secondaryText || (savedResult ? '说出要修改的内容。' : question ? '继续说话，补充本次操作。' : '说说是什么、在哪里，或者要怎样处理。')}}</view>
-    <view class="main-action">
-      <hold-to-talk
-        id="h2t"
-        idle-text="按住说话"
-        disabled="{{processing || !sessionReady || state === 'FAILED'}}"
-        bind:recordstart="onRecordStart"
-        bind:recordready="onRecordReady"
-        bind:recordmove="onRecordMove"
-        bind:recordcancel="onRecordCancel"
-        bind:recordfinish="onRecordFinish"
-        bind:recorderror="onRecordError"
-        bind:permissiondenied="onPermissionDenied"
-      />
-    </view>
-    <view wx:if="{{question || savedResult}}" class="text-entry">
-      <textarea class="description-input" value="{{inputText}}" bindinput="onTextInput" maxlength="2000" auto-height="true" placeholder="也可以输入要补充或修改的内容" disabled="{{processing || state === 'RECORDING'}}" />
-      <button class="mini-btn submit-text" bindtap="onTextSubmit" disabled="{{processing || !sessionReady || state === 'RECORDING'}}">{{state === 'MODIFY' ? '保存修改' : '发送补充'}}</button>
-    </view>
-    <view class="text-hint centered footer-hint">照片用于保存物品外观；语音转为文字后不保留录音。</view>
   </block>
+
+  <voice-text-input
+    id="composer"
+    visible="{{state !== 'SAVED'}}"
+    value="{{inputText}}"
+    placeholder="{{state === 'MODIFY' ? '输入要修改的内容' : question ? '输入要补充的内容' : '输入物品、位置或要进行的操作'}}"
+    submit-text="{{state === 'MODIFY' ? '保存修改' : question ? '发送补充' : '发送'}}"
+    maxlength="{{2000}}"
+    disabled="{{processing || !sessionReady || state === 'FAILED'}}"
+    bind:input="onTextInput"
+    bind:submit="onTextSubmit"
+    bind:recordstart="onRecordStart"
+    bind:recordready="onRecordReady"
+    bind:recordmove="onRecordMove"
+    bind:recordcancel="onRecordCancel"
+    bind:recordfinish="onRecordFinish"
+    bind:recorderror="onRecordError"
+    bind:permissiondenied="onPermissionDenied"
+  />
 
   <view wx:if="{{state === 'SAVED'}}" class="result-mask">
     <view class="result-panel brutal-card">

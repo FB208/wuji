@@ -1,7 +1,8 @@
 {
   "navigationBarTitleText": "找东西",
   "usingComponents": {
-    "hold-to-talk": "/components/hold-to-talk/index",
+    "markdown-text": "/components/markdown-text/index",
+    "voice-text-input": "/components/voice-text-input/index",
     "item-card": "/components/item-card/index",
     "notice-panel": "/components/notice-panel/index"
   }

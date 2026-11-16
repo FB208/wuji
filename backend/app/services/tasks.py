@@ -22,6 +22,8 @@ class Task:
     done: bool = False
     result: dict | None = None
     error: dict | None = None
+    revision: int = 0
+    progress: dict | None = None
     idem_key: str | None = None
     created_at: float = field(default_factory=time.time)
 
@@ -70,6 +72,23 @@ def set_stage(task_id: str, stage: str, detail: str = "") -> None:
         task.detail = detail
 
 
+def update_progress(task_id: str, progress: dict) -> None:
+    """保存本轮最新展示快照；轮询通过版本号跳过未变化的内容。"""
+    task = _tasks.get(task_id)
+    if task is not None and not task.done:
+        task.progress = progress
+        task.revision += 1
+
+
+def snapshot(task: Task) -> dict:
+    """历史恢复与任务轮询使用同一份状态结构。"""
+    return {
+        "task_id": task.id, "kind": task.kind, "stage": task.stage,
+        "detail": task.detail, "done": task.done, "result": task.result,
+        "error": task.error, "revision": task.revision, "progress": task.progress,
+    }
+
+
 def finish(task_id: str, result: dict) -> None:
     task = _tasks.get(task_id)
     if task is not None:
@@ -85,6 +104,9 @@ def fail(task_id: str, err: BaseException) -> None:
         return
     task.stage = "failed"
     task.done = True
+    if task.progress is not None:
+        task.progress = {**task.progress, "draft": None}
+    task.revision += 1
     if isinstance(err, AppError):
         task.error = {"code": err.code, "message": err.message, "retryable": err.retryable}
     else:

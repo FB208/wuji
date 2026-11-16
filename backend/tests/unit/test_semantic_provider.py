@@ -7,7 +7,7 @@ import pytest
 
 from app.core.errors import AppError
 from app.providers import semantic as sem
-from app.providers.semantic_contracts import RECORD_SYSTEM_PROMPT, SEARCH_SYSTEM_PROMPT
+from app.providers.semantic_contracts import RECORD_SYSTEM_PROMPT
 
 
 def _resp(content: str, status: int = 200) -> httpx.Response:
@@ -130,27 +130,6 @@ async def test_record_schema_rejected(raw):
     assert ei.value.code in ("RECORD_PARSE_FAILED",)
 
 
-async def test_search_status_matrix():
-    for raw, expect in [
-        ({"status": "found", "item_ids": [1], "prompt": None}, ("found", [1])),
-        ({"status": "multiple", "item_ids": [1, 2], "prompt": "p"}, ("multiple", [1, 2])),
-        ({"status": "not_found", "item_ids": [], "prompt": "np"}, ("not_found", [])),
-        ({"status": "found", "item_ids": [999], "prompt": None}, ("not_found", [])),
-        ({"status": "found", "item_ids": [1, 2], "prompt": None}, "error"),
-        ({"status": "multiple", "item_ids": [1], "prompt": None}, "error"),
-        ({"status": "found", "item_ids": [], "prompt": None}, "error"),
-        ({"status": "bad", "item_ids": [], "prompt": None}, "error"),
-    ]:
-        with patch.object(sem.SemanticProvider, "_chat", new=AsyncMock(return_value=raw)):
-            if expect == "error":
-                with pytest.raises(AppError) as ei:
-                    await sem.semantic_provider.search_items("q", {}, [_item(1), _item(2)])
-                assert ei.value.code == "SEARCH_FAILED"
-            else:
-                out = await sem.semantic_provider.search_items("q", {}, [_item(1), _item(2)])
-                assert out["status"] == expect[0] and out["item_ids"] == expect[1]
-
-
 async def test_batch_covers_all_and_budget_precheck():
     items = [_item(i) for i in range(1, 501)]
     for i in items:
@@ -164,11 +143,9 @@ async def test_batch_covers_all_and_budget_precheck():
         concurrency["max"] = max(concurrency["max"], concurrency["now"])
         try:
             batch_items = payload.get("existing_items") or payload.get("items")
-            if system_prompt is not RECORD_SYSTEM_PROMPT and system_prompt is not SEARCH_SYSTEM_PROMPT:
+            if system_prompt is not RECORD_SYSTEM_PROMPT:
                 return {"item_ids": [i["id"] for i in batch_items[:5]]}
-            if system_prompt is RECORD_SYSTEM_PROMPT:
-                return {"operation": "create", "target_item_id": None, "name": "n", "location_text": "l", "candidate_item_ids": []}
-            return {"status": "not_found", "item_ids": [], "prompt": None}
+            return {"operation": "create", "target_item_id": None, "name": "n", "location_text": "l", "candidate_item_ids": []}
         finally:
             concurrency["now"] -= 1
 
@@ -182,13 +159,6 @@ async def test_batch_covers_all_and_budget_precheck():
         assert len(json.dumps(c, ensure_ascii=False, separators=(",", ":"))) <= 48000 + 4096
     assert len(calls) <= 11
     assert concurrency["max"] <= 2
-
-    calls.clear()
-    with patch.object(sem.SemanticProvider, "_chat", side_effect=fake_chat):
-        await sem.semantic_provider.search_items("q", {}, items)
-    candidate_items = [i["id"] for c in calls[:-1] for i in (c.get("existing_items") or c.get("items"))]
-    assert sorted(candidate_items) == list(range(1, 501))
-    assert len(calls) <= 11
 
     huge = [_item(i) for i in range(1, 2001)]
     for i in huge:
@@ -285,16 +255,11 @@ async def test_move_target_outside_final_input_falls_back():
     {"operation": "create", "target_item_id": None, "name": "n", "location_text": "l", "candidate_item_ids": [1]},
     {"operation": "create", "target_item_id": None, "name": "n", "location_text": "l"},
     {"operation": "clarify", "target_item_id": None, "name": "", "location_text": "l", "candidate_item_ids": [1]},
-    {"status": "found", "item_ids": [1, 2], "prompt": None},
-    {"status": "found", "item_ids": [1, 1], "prompt": None},
 ])
 async def test_strict_schema_missing_or_bad(raw):
     with patch.object(sem.SemanticProvider, "_chat", new=AsyncMock(return_value=raw)):
         with pytest.raises(AppError):
-            if "operation" in raw:
-                await sem.semantic_provider.judge_record("t", [_item(1), _item(2)])
-            else:
-                await sem.semantic_provider.search_items("q", {}, [_item(1), _item(2)])
+            await sem.semantic_provider.judge_record("t", [_item(1), _item(2)])
 
 
 async def test_read_timeout_retryable():
@@ -362,15 +327,12 @@ async def test_exact_char_budget_assertion():
         await asyncio.sleep(0.01)
         concurrency["now"] -= 1
         batch = payload.get("existing_items") or payload.get("items")
-        if prompt is not sem.RECORD_SYSTEM_PROMPT and prompt is not sem.SEARCH_SYSTEM_PROMPT:
+        if prompt is not sem.RECORD_SYSTEM_PROMPT:
             return {"item_ids": [i["id"] for i in batch[:5]]}
-        if prompt is sem.RECORD_SYSTEM_PROMPT:
-            return {"operation": "create", "target_item_id": None, "name": "n", "location_text": "l", "candidate_item_ids": []}
-        return {"status": "not_found", "item_ids": [], "prompt": None}
+        return {"operation": "create", "target_item_id": None, "name": "n", "location_text": "l", "candidate_item_ids": []}
 
     with patch.object(sem.SemanticProvider, "_chat", side_effect=fake_chat):
         await sem.semantic_provider.judge_record("t", items)
-        await sem.semantic_provider.search_items("q", {}, items)
 
     for prompt, payload in calls:
         measure = len(prompt) + len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
@@ -414,15 +376,6 @@ async def test_slow_stream_exceeds_call_timeout():
         with pytest.raises(AppError) as ei:
             await sem.semantic_provider.judge_record("t", [])
     assert ei.value.retryable is True and ei.value.status_code == 503
-
-
-async def test_search_missing_prompt_rejected():
-    with patch.object(sem.SemanticProvider, "_chat", new=AsyncMock(
-        return_value={"status": "multiple", "item_ids": [1, 2]}
-    )):
-        with pytest.raises(AppError) as ei:
-            await sem.semantic_provider.search_items("q", {}, [_item(1), _item(2)])
-    assert ei.value.code == "SEARCH_FAILED"
 
 
 async def test_budget_shared_across_judges():

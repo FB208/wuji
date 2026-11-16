@@ -1,0 +1,14 @@
+.git/
+**/node_modules/
+**/.venv/
+**/.env
+**/.env.*
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/tests/
+**/logs/
+agent/dist/
+agent/data/
+backend/requirements-dev.txt
+backend/requirements-constraints.txt

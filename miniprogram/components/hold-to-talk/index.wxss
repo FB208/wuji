@@ -15,6 +15,7 @@
 
 /* 紧凑形态：与输入框同高，用于输入栏内语音/文字切换（文档 8.3） */
 .compact {
+  box-sizing: border-box;
   padding: 0;
   height: 80rpx;
   font-size: 30rpx;

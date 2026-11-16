@@ -1,9 +1,0 @@
-.venv/
-.env
-__pycache__/
-*.pyc
-.pytest_cache/
-tests/
-logs/
-requirements-dev.txt
-requirements-constraints.txt

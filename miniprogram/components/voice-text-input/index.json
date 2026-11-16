@@ -1,0 +1,7 @@
+{
+  "component": true,
+  "styleIsolation": "isolated",
+  "usingComponents": {
+    "hold-to-talk": "/components/hold-to-talk/index"
+  }
+}

@@ -180,12 +180,8 @@ Page({
     }
     wx.navigateTo({ url: "/pages/record/index" });
   },
+  /** 导航不等待首页请求，目标页共享登录初始化。 */
   goSearch() {
-    if (!this.active()) return;
-    if (!this._sessionScope.familyId) {
-      this.goProfile();
-      return;
-    }
     wx.navigateTo({ url: "/pages/search/index" });
   },
   onItemTap(e) {

@@ -39,18 +39,8 @@ async def require_owner(db: AsyncSession, family_id: int, user_id: int) -> Famil
 
 
 async def list_families(db: AsyncSession, user_id: int) -> list[dict]:
-    result = []
-    for family, role in await repos.list_user_families(db, user_id):
-        result.append(
-            {
-                "id": family.id,
-                "name": family.name,
-                "owner_user_id": family.owner_user_id,
-                "role": role,
-                "member_count": await repos.count_family_members(db, family.id),
-            }
-        )
-    return result
+    """一次聚合查询读取家庭资料及成员数。"""
+    return await repos.list_user_family_summaries(db, user_id)
 
 
 async def create_family(db: AsyncSession, user_id: int, name: str) -> dict:

@@ -1,4 +1,4 @@
-"""媒体、语音、入库、查找与物品维护接口（文档 13.2～13.5）。"""
+"""媒体、语音、入库与物品维护接口。"""
 import asyncio
 import json
 
@@ -13,7 +13,6 @@ from app.core.errors import (
     not_found,
     ok,
     record_failed,
-    search_failed,
 )
 from app.core.logging import get_logger
 from app.core.security import rate_limiter
@@ -23,10 +22,9 @@ from app.providers.speech import speech_provider
 from app.schemas.schemas import (
     ItemPatchRequest,
     ItemRecordRequest,
-    SearchTextRequest,
 )
 from app.repositories import repos
-from app.services import idempotency_service, record_service, search_service, tasks
+from app.services import idempotency_service, record_service, tasks
 from app.services.family_service import require_membership
 
 router = APIRouter()
@@ -170,59 +168,7 @@ async def task_status(
     task = tasks.get(task_id, user.id)
     if task is None:
         raise not_found("任务不存在或已过期")
-    return ok(
-        request,
-        {
-            "task_id": task.id,
-            "kind": task.kind,
-            "stage": task.stage,
-            "detail": task.detail,
-            "done": task.done,
-            "result": task.result,
-            "error": task.error,
-        },
-    )
-
-
-# ---------- 查找 ----------
-@router.post("/items/search/audio")
-async def search_audio(
-    request: Request,
-    family_id: int = Form(...),
-    audio: UploadFile = File(...),
-    context_json: str | None = Form(default=None),
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    rate_limiter.check(f"search:{user.id}", limit=30, window_seconds=60)
-    content = await audio.read()
-    if len(content) < MIN_AUDIO_BYTES:
-        raise audio_too_short()
-    if len(content) > MAX_AUDIO_BYTES:
-        raise audio_too_long()
-    logger.info("收到查找录音 user=%d bytes=%d name=%s", user.id, len(content), audio.filename)
-    context = None
-    if context_json:
-        try:
-            context = json.loads(context_json)
-        except json.JSONDecodeError as exc:
-            raise AppError("VALIDATION_ERROR", "查找上下文格式无效", status_code=400, retryable=False) from exc
-    data = await search_service.search_by_audio(
-        db, user.id, family_id, content, _audio_ext(audio.filename), context
-    )
-    return ok(request, data)
-
-
-@router.post("/items/search/text")
-async def search_text(
-    request: Request,
-    body: SearchTextRequest,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    rate_limiter.check(f"search:{user.id}", limit=30, window_seconds=60)
-    data = await search_service.search_by_text(db, user.id, body.family_id, body.query, body.context)
-    return ok(request, data)
+    return ok(request, tasks.snapshot(task))
 
 
 # ---------- 物品维护 ----------

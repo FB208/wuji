@@ -1,0 +1,39 @@
+<view wx:if="{{visible}}" class="input-space" style="height: calc(128rpx + {{keyboardHeight}}px + env(safe-area-inset-bottom));">
+  <view class="input-dock {{keyboardHeight > 0 ? 'keyboard-open' : ''}}" style="bottom: {{keyboardHeight}}px;">
+    <view class="input-bar">
+      <button class="mode-toggle" disabled="{{disabled || recording}}" bindtap="toggleMode" aria-label="{{showTextInput ? '切换语音输入' : '切换文字输入'}}">
+        <view class="icon icon-{{showTextInput ? 'mic' : 'kbd'}}"></view>
+      </button>
+      <block wx:if="{{showTextInput}}">
+        <input
+          class="text-input"
+          value="{{value}}"
+          placeholder="{{placeholder}}"
+          maxlength="{{maxlength}}"
+          confirm-type="{{confirmType}}"
+          adjust-position="{{false}}"
+          disabled="{{disabled}}"
+          bindinput="onInput"
+          bindconfirm="onSubmit"
+          bindkeyboardheightchange="onKeyboardHeightChange"
+        />
+        <button class="send-btn" disabled="{{disabled || submitDisabled}}" bindtap="onSubmit">{{submitText}}</button>
+      </block>
+      <view wx:else class="voice-input">
+        <hold-to-talk
+          id="recorder"
+          compact="{{true}}"
+          idle-text="{{idleText}}"
+          disabled="{{disabled || submitDisabled}}"
+          bind:recordstart="onRecordEvent"
+          bind:recordready="onRecordEvent"
+          bind:recordmove="onRecordEvent"
+          bind:recordcancel="onRecordEvent"
+          bind:recordfinish="onRecordEvent"
+          bind:recorderror="onRecordEvent"
+          bind:permissiondenied="onRecordEvent"
+        />
+      </view>
+    </view>
+  </view>
+</view>

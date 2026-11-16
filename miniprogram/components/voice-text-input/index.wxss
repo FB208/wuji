@@ -1,0 +1,74 @@
+:host { display: block; flex-shrink: 0; }
+
+/* 两页共用固定底栏和安全区，正文占位随键盘升高。 */
+.input-dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  box-sizing: border-box;
+  padding: 24rpx 32rpx calc(24rpx + env(safe-area-inset-bottom));
+  background: var(--bg);
+  color: #111111;
+}
+.input-dock.keyboard-open { padding-bottom: 24rpx; }
+.input-bar { display: flex; align-items: center; gap: 16rpx; }
+
+/* 显式覆盖原生按钮尺寸，圆形开关和发送按钮均不参与拉伸。 */
+.input-bar > button {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  border: 4rpx solid #111111;
+  box-shadow: 4rpx 4rpx 0 #111111;
+  color: #111111;
+  font-size: 30rpx;
+  font-weight: 700;
+  line-height: 1;
+}
+.input-bar > button::after { border: none; }
+.input-bar > button[disabled] { opacity: 0.5; }
+.input-bar > button:not([disabled]):active { transform: translate(4rpx, 4rpx); box-shadow: 2rpx 2rpx 0 #111111; }
+.input-bar > button.mode-toggle {
+  flex: 0 0 72rpx;
+  width: 72rpx;
+  min-width: 72rpx;
+  max-width: 72rpx;
+  height: 72rpx;
+  padding: 0;
+  border-radius: 50%;
+  background: #ffffff;
+}
+.input-bar > button.send-btn {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 128rpx;
+  height: 80rpx;
+  padding: 0 28rpx;
+  border-radius: 16rpx;
+  background: #8ec5ff;
+  white-space: nowrap;
+}
+.icon { width: 40rpx; height: 40rpx; background-size: contain; background-repeat: no-repeat; background-position: center; }
+.icon-mic {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23111111' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='9' y='3' width='6' height='11' rx='3'/%3E%3Cpath d='M5 11a7 7 0 0 0 14 0'/%3E%3Cline x1='12' y1='18' x2='12' y2='21'/%3E%3C/svg%3E");
+}
+.icon-kbd {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23111111' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='6' width='20' height='12' rx='2'/%3E%3Cline x1='6' y1='10' x2='6' y2='10'/%3E%3Cline x1='10' y1='10' x2='10' y2='10'/%3E%3Cline x1='14' y1='10' x2='14' y2='10'/%3E%3Cline x1='18' y1='10' x2='18' y2='10'/%3E%3Cline x1='7' y1='14' x2='17' y2='14'/%3E%3C/svg%3E");
+}
+.text-input {
+  flex: 1;
+  box-sizing: border-box;
+  width: 0;
+  min-width: 0;
+  height: 80rpx;
+  padding: 0 24rpx;
+  background: #ffffff;
+  border: 4rpx solid #111111;
+  border-radius: 16rpx;
+  font-size: 30rpx;
+}
+.voice-input { flex: 1; min-width: 0; }
+.voice-input hold-to-talk { display: block; width: 100%; }

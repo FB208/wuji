@@ -2,8 +2,8 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
-from typing_extensions import Annotated, TypedDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from typing_extensions import TypedDict
 
 
 # ---------- 认证 ----------
@@ -79,13 +79,6 @@ class ItemOut(BaseModel):
     image_url: str
     version: int
     updated_at: datetime
-
-
-class ItemBriefOut(BaseModel):
-    id: int
-    name: str
-    location_text: str
-    image_url: str
 
 
 RecordOperation = Literal["create", "delete", "move"]
@@ -185,49 +178,6 @@ class ItemPatchRequest(BaseModel):
     location_text: str | None = Field(default=None, min_length=1, max_length=255)
     image_token: str | None = Field(default=None, max_length=2048)
     expected_version: int = Field(ge=1)
-
-
-# ---------- 查找 ----------
-def _positive_int(value: Any) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise ValueError("物品 id 必须为正整数")
-    return value
-
-
-SearchItemId = Annotated[int, BeforeValidator(_positive_int)]
-
-
-class SearchTurn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    query: str = Field(max_length=512)
-    status: Literal["found", "multiple", "not_found"] | None = None
-    item_ids: list[SearchItemId] = Field(default_factory=list, max_length=5)
-
-
-class SearchContext(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    family_id: int | None = None
-    initial_query: str | None = Field(default=None, max_length=512)
-    turns: list[SearchTurn] = Field(default_factory=list, max_length=6)
-    shown_item_ids: list[SearchItemId] = Field(default_factory=list, max_length=500)
-    excluded_item_ids: list[SearchItemId] = Field(default_factory=list, max_length=500)
-    last_item_ids: list[SearchItemId] = Field(default_factory=list, max_length=5)
-    last_status: Literal["found", "multiple", "not_found"] | None = None
-
-
-class SearchTextRequest(BaseModel):
-    family_id: int
-    query: str = Field(min_length=1, max_length=512)
-    context: dict | None = None
-
-
-class SearchOut(BaseModel):
-    transcript: str | None
-    status: str
-    prompt: str | None
-    items: list[ItemBriefOut]
 
 
 # ---------- 媒体 ----------

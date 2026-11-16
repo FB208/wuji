@@ -7,11 +7,16 @@ const BLOCKED_KEY = "wuji_login_blocked";
 let meSeq = 0;
 let loginSeq = 0;
 let blockedInMemory = false;
+let loginInflight = null;
+let initializedToken = "";
 
+/** 退出或注销时使本次运行的登录状态和旧请求同时失效。 */
 function blockAutoLogin() {
   blockedInMemory = true;
   loginSeq += 1;
   meSeq += 1;
+  initializedToken = "";
+  loginInflight = null;
   wx.setStorageSync(BLOCKED_KEY, true);
 }
 
@@ -54,6 +59,7 @@ function identityChanged() {
 }
 
 function wxLogin(allowRegistration = false) {
+  initializedToken = "";
   const seq = ++loginSeq;
   const userId = store.user ? store.user.id : 0;
   return new Promise((resolve, reject) => {
@@ -125,6 +131,7 @@ async function refreshMe(skipAuthRecovery = false, preferredFamilyId) {
     data.families,
     store.isCurrentScope(scope) ? preferredFamilyId : undefined
   );
+  initializedToken = token;
   return data;
 }
 
@@ -147,34 +154,43 @@ function installAuthRecovery() {
   registerAuthRecovery(refreshCredentials);
 }
 
-/** 确保已登录：有令牌则校验，无令牌或失效则重新登录。 */
+/** 一次运行只初始化一次登录；并发页面共享初始化，业务变更显式调用 refreshMe。 */
 async function ensureLogin(options = {}) {
   if (options.interactive) unblockAutoLogin();
-  store.restore();
   if (isBlocked()) {
     throw new ApiError({ code: "LOGIN_BLOCKED", message: "请点击重新登录", retryable: false });
   }
-  const hadToken = !!getToken();
-  if (hadToken) {
-    try {
-      await refreshMe(true);
-      return;
-    } catch (err) {
-      if (!(err instanceof ApiError) || (err.code !== "AUTH_REQUIRED" && err.statusCode !== 401)) {
-        throw err;
+  const token = getToken();
+  if (token && token === initializedToken) return;
+  if (loginInflight) return loginInflight;
+  const pending = (async () => {
+    const hadToken = !!token;
+    if (hadToken) {
+      try {
+        await refreshMe(true);
+        return;
+      } catch (err) {
+        if (!(err instanceof ApiError) || (err.code !== "AUTH_REQUIRED" && err.statusCode !== 401)) {
+          throw err;
+        }
       }
-      // 令牌失效，走重新登录
     }
-  }
-  const login = await wxLogin(!!options.interactive || (!hadToken && !store.user));
-  const me = await refreshMe(true);
-  if (
-    getToken() !== login.access_token ||
-    me.user.id !== login.user.id ||
-    !store.user ||
-    store.user.id !== me.user.id
-  ) {
-    throw authCancelled();
+    const login = await wxLogin(!!options.interactive || (!hadToken && !store.user));
+    const me = await refreshMe(true);
+    if (
+      getToken() !== login.access_token ||
+      me.user.id !== login.user.id ||
+      !store.user ||
+      store.user.id !== me.user.id
+    ) {
+      throw authCancelled();
+    }
+  })();
+  loginInflight = pending;
+  try {
+    await pending;
+  } finally {
+    if (loginInflight === pending) loginInflight = null;
   }
 }
 

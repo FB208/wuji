@@ -1,4 +1,4 @@
-name: Deploy wuji backend
+name: Deploy wuji
 
 on:
   push:
@@ -93,7 +93,7 @@ jobs:
         id: build
         uses: docker/build-push-action@v7
         with:
-          context: backend
+          context: .
           file: backend/Dockerfile
           push: true
           tags: ${{ steps.release.outputs.image }}
@@ -166,7 +166,7 @@ jobs:
           DEPLOY_RESULT: ${{ steps.server.outcome }}
         run: |
           @"
-          ## wuji backend production deployment
+          ## wuji production deployment
           - Tag: $env:GITHUB_REF_NAME
           - Image: $env:RELEASE_IMAGE
           - Build: $env:BUILD_RESULT

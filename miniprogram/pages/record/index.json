@@ -2,7 +2,7 @@
   "navigationBarTitleText": "收起来",
   "disableScroll": false,
   "usingComponents": {
-    "hold-to-talk": "/components/hold-to-talk/index",
+    "voice-text-input": "/components/voice-text-input/index",
     "status-panel": "/components/status-panel/index",
     "notice-panel": "/components/notice-panel/index"
   }

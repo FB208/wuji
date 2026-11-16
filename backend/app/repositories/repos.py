@@ -59,9 +59,24 @@ async def list_user_families(db: AsyncSession, user_id: int) -> list[tuple[Famil
     return [(row[0], row[1]) for row in (await db.execute(stmt)).all()]
 
 
-async def count_family_members(db: AsyncSession, family_id: int) -> int:
-    stmt = select(func.count()).select_from(FamilyMember).where(FamilyMember.family_id == family_id)
-    return (await db.execute(stmt)).scalar_one()
+async def list_user_family_summaries(db: AsyncSession, user_id: int) -> list[dict]:
+    """一次聚合查询取得家庭展示资料及成员数，避免逐家庭额外计数。"""
+    member_counts = (
+        select(FamilyMember.family_id, func.count().label("member_count"))
+        .group_by(FamilyMember.family_id)
+        .subquery()
+    )
+    stmt = (
+        select(
+            Family.id, Family.name, Family.owner_user_id, FamilyMember.role,
+            member_counts.c.member_count,
+        )
+        .join(FamilyMember, FamilyMember.family_id == Family.id)
+        .join(member_counts, member_counts.c.family_id == Family.id)
+        .where(FamilyMember.user_id == user_id)
+        .order_by(Family.id)
+    )
+    return [dict(row) for row in (await db.execute(stmt)).mappings()]
 
 
 async def list_family_members(db: AsyncSession, family_id: int) -> list[tuple[FamilyMember, User]]:
@@ -94,15 +109,6 @@ async def get_active_item_for_update(
 async def list_active_items(db: AsyncSession, family_id: int) -> list[Item]:
     stmt = _active_items_stmt(family_id).order_by(Item.updated_at.desc())
     return list((await db.execute(stmt)).scalars().all())
-
-
-async def list_active_items_by_ids(db: AsyncSession, family_id: int, item_ids: list[int]) -> list[Item]:
-    if not item_ids:
-        return []
-    stmt = _active_items_stmt(family_id).where(Item.id.in_(item_ids))
-    items = {item.id: item for item in (await db.execute(stmt)).scalars().all()}
-    # 保持传入顺序（相关度排序，文档 10.4）
-    return [items[i] for i in item_ids if i in items]
 
 
 async def search_items_page(

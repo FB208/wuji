@@ -1,5 +1,6 @@
 """应用配置。所有第三方密钥仅保存在后端环境变量中（文档 14.2）。"""
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -54,6 +55,11 @@ class Settings(BaseSettings):
     semantic_base_url: str = "https://provider.example.com/v1"
     semantic_api_key: str = ""
     semantic_model: str = ""
+    # 内置 Pi 子进程的运行目录、会话目录与模型参数。
+    agent_dir: Path = Path(__file__).resolve().parents[3] / "agent"
+    agent_data_dir: str = "data"
+    agent_context_window: int = 128000
+    agent_max_tokens: int = 8192
     semantic_max_input_chars: int = Field(default=DEFAULT_SEMANTIC_MAX_INPUT_CHARS, gt=0)
     semantic_max_batch_items: int = Field(default=DEFAULT_SEMANTIC_MAX_BATCH_ITEMS, gt=0)
     semantic_max_batches: int = Field(default=DEFAULT_SEMANTIC_MAX_BATCHES, gt=0)

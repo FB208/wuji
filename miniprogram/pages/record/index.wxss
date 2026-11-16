@@ -1,7 +1,7 @@
 .record-page {
   min-height: 100vh;
   box-sizing: border-box;
-  padding: 32rpx 32rpx calc(32rpx + env(safe-area-inset-bottom));
+  padding: 32rpx 32rpx 0;
 }
 
 .mic-banner {
@@ -31,13 +31,16 @@
 }
 .camera, .preview { width: 100%; height: 100%; }
 .camera-error {
-  height: 100%;
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 24rpx;
 }
+/* 设置入口按内容定高，避免在纵向容器里被通用按钮样式拉长。 */
+.camera-error .mini-btn { flex: none; padding: 16rpx 32rpx; }
 .photo-actions, .operation-actions, .result-actions {
   display: flex;
   gap: 24rpx;
@@ -59,18 +62,8 @@
 .mini-btn::after { border: none; }
 .mini-btn[disabled] { opacity: 0.5; }
 .secondary-btn { background: #ffffff; }
-.guide {
-  margin-top: 32rpx;
-  text-align: center;
-  font-size: 30rpx;
-  color: #555555;
-}
-.main-action { margin-top: 24rpx; }
-.main-action hold-to-talk { display: block; width: 100%; }
 .section-title { font-size: 32rpx; font-weight: 700; line-height: 1.6; }
 .text-hint { margin-top: 16rpx; font-size: 24rpx; line-height: 1.6; color: #666666; }
-.centered { text-align: center; }
-.footer-hint { margin-top: 32rpx; }
 .saved-note, .question-card { padding: 24rpx; margin-bottom: 28rpx; }
 .saved-note { background: #fff3c4; }
 .candidate {
@@ -88,19 +81,6 @@
 .candidate-name { font-size: 30rpx; font-weight: 700; }
 .candidate-location { margin-top: 8rpx; color: #555555; font-size: 26rpx; }
 .candidate-arrow { font-size: 44rpx; }
-.text-entry { margin-top: 28rpx; }
-.description-input {
-  width: 100%;
-  min-height: 120rpx;
-  box-sizing: border-box;
-  padding: 20rpx;
-  background: #ffffff;
-  border: 3rpx solid #111111;
-  border-radius: 12rpx;
-  font-size: 28rpx;
-  line-height: 1.6;
-}
-.submit-text { margin-top: 20rpx; }
 .result-mask {
   position: fixed;
   inset: 0;

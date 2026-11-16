@@ -1,0 +1,14 @@
+{
+  "name": "wuji-markdown",
+  "private": true,
+  "scripts": {
+    "build": "esbuild index.js --bundle --platform=browser --format=cjs --target=es2018 --minify --legal-comments=eof --outfile=../../miniprogram/utils/markdown.js"
+  },
+  "dependencies": {
+    "marked": "15.0.12",
+    "entities": "6.0.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
+}

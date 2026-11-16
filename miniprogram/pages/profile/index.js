@@ -1,6 +1,6 @@
 /** P08 个人中心：账号、家庭、数据、关于（文档 8.5）。 */
 const { request, ApiError, clearToken } = require("../../services/api");
-const { ensureLogin, refreshMe } = require("../../services/auth");
+const { blockAutoLogin, ensureLogin, refreshMe } = require("../../services/auth");
 const { PageScope } = require("../../services/page-scope");
 const { store } = require("../../store/index");
 const { bindNotice, registerNotice, showNotice, confirmNotice, promptNotice } = require("../../services/notice");
@@ -276,6 +276,7 @@ Page({
       await g.run(op, (hooks) =>
         request({ path: "/me", method: "DELETE", isCancelled: hooks.isCancelled, onTask: hooks.onTask })
       );
+      blockAutoLogin();
       clearToken();
       store.clearSession();
       wx.reLaunch({ url: "/pages/launch/index" });

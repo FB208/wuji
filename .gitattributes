@@ -2,3 +2,5 @@
 *.yml text eol=lf
 *.yaml text eol=lf
 *.sh text eol=lf
+# Windows 批处理脚本检出时统一使用 CRLF。
+*.bat text eol=crlf

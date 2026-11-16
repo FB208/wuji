@@ -16,15 +16,12 @@ from app.core.config import get_settings
 from app.core.errors import (
     AppError,
     record_parse_failed,
-    search_failed,
     semantic_budget_exceeded,
 )
 from app.core.logging import get_logger
 from app.providers.semantic_contracts import (
     RECORD_CANDIDATES_SYSTEM_PROMPT,
     RECORD_SYSTEM_PROMPT,
-    SEARCH_CANDIDATES_SYSTEM_PROMPT,
-    SEARCH_SYSTEM_PROMPT,
 )
 
 from app.schemas.schemas import RecordContext, RecordOperation
@@ -123,12 +120,6 @@ class RecordJudgeOut(_StrictBase):
                 if self.operation == "move" and not self.location_text:
                     raise ValueError("移位需要新位置")
         return self
-
-
-class SearchJudgeOut(_StrictBase):
-    status: Literal["found", "multiple", "not_found"]
-    item_ids: list[PosInt] = Field(max_length=5)
-    prompt: Optional[StrictStr]
 
 
 @dataclass
@@ -351,55 +342,5 @@ class SemanticProvider:
         except (ValueError, KeyError, TypeError) as exc:
             logger.error("收纳语义解析失败：%s", exc)
             raise record_parse_failed() from exc
-
-    async def search_items(
-        self,
-        query: str,
-        context: dict[str, Any],
-        items: list[dict[str, Any]],
-        *,
-        budget: SemanticBudget | None = None,
-    ) -> dict[str, Any]:
-        """查找判断（附录 A.3 / A.4）：返回 status、item_ids、prompt。"""
-        if budget is None:
-            budget = SemanticBudget.from_settings()
-        try:
-            async with asyncio.timeout_at(budget.deadline):
-                raw, allowed = await self._judge(
-                    candidate_prompt=SEARCH_CANDIDATES_SYSTEM_PROMPT,
-                    final_prompt=SEARCH_SYSTEM_PROMPT,
-                    base_payload={"query": query, "context": context},
-                    items_key="items",
-                    items=items,
-                    budget=budget,
-                )
-            result = SearchJudgeOut.model_validate(raw)
-        except AppError:
-            raise
-        except TimeoutError as exc:
-            logger.error("查找语义判断超时：%s", type(exc).__name__)
-            raise search_failed() from exc
-        except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.TransportError) as exc:
-            logger.error("查找语义请求失败：%s", type(exc).__name__)
-            raise search_failed() from exc
-        except Exception as exc:
-            logger.error("查找语义解析失败：%s", type(exc).__name__)
-            raise search_failed() from exc
-
-        if result.status == "found" and len(result.item_ids) != 1:
-            raise search_failed()
-        ids = _dedupe(result.item_ids)
-        status = result.status
-        if (status == "found" and len(ids) != 1) or (
-            status == "multiple" and not (2 <= len(ids) <= 5)
-        ) or (status == "not_found" and ids):
-            raise search_failed()
-        filtered = [i for i in ids if i in allowed]
-        if not filtered:
-            return {"status": "not_found", "item_ids": [], "prompt": result.prompt}
-        if len(filtered) == 1:
-            return {"status": "found", "item_ids": filtered, "prompt": None}
-        return {"status": "multiple", "item_ids": filtered[:5], "prompt": result.prompt}
-
 
 semantic_provider = SemanticProvider()
