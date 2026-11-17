@@ -19,11 +19,11 @@
 
     <brutal-button
       wx:if="{{isOwner}}"
-      text="邀请家庭成员"
+      text="添加家庭成员"
       color="pink"
       size="large"
       disabled="{{busy}}"
-      bind:tap="onInvite"
+      bind:tap="onAddMember"
     />
 
     <view class="section-title">成员（{{members.length}}）</view>

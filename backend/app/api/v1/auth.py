@@ -32,7 +32,7 @@ async def me(
     return ok(
         request,
         {
-            "user": {"id": user.id, "nickname": user.nickname, "avatar_url": user.avatar_url},
+            "user": auth_service.user_payload(user),
             "families": families,
         },
     )

@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.core.logging import get_logger
-from app.core.security import create_access_token
+from app.core.security import create_access_token, generate_user_code
 from app.models.tables import Family, FamilyMember, User
 from app.repositories import repos
 
@@ -36,6 +36,23 @@ async def _code2session(code: str) -> dict:
     return body
 
 
+def user_payload(user: User) -> dict:
+    return {
+        "id": user.id,
+        "user_code": user.user_code,
+        "nickname": user.nickname,
+        "avatar_url": user.avatar_url,
+    }
+
+
+async def _new_user_code(db: AsyncSession) -> str:
+    for _ in range(10):
+        code = generate_user_code()
+        if await repos.get_user_by_code(db, code) is None:
+            return code
+    raise AppError("INTERNAL_ERROR", "生成用户ID失败，请重试", status_code=500, retryable=True)
+
+
 async def wechat_login(
     db: AsyncSession, code: str, nickname: str | None, avatar_url: str | None
 ) -> dict:
@@ -45,7 +62,13 @@ async def wechat_login(
 
     user = await repos.get_user_by_openid(db, openid)
     if user is None:
-        user = User(openid=openid, unionid=unionid, nickname=nickname, avatar_url=avatar_url)
+        user = User(
+            openid=openid,
+            user_code=await _new_user_code(db),
+            unionid=unionid,
+            nickname=nickname,
+            avatar_url=avatar_url,
+        )
         db.add(user)
         await db.flush()
         # 首次登录自动创建个人家庭组“我的家”
@@ -74,6 +97,6 @@ async def wechat_login(
 
     return {
         "access_token": create_access_token(user.id),
-        "user": {"id": user.id, "nickname": user.nickname, "avatar_url": user.avatar_url},
+        "user": user_payload(user),
         "current_family_id": default_family_id,
     }

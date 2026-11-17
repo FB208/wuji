@@ -10,6 +10,7 @@ Page({
     notice: null,
     nickname: "",
     avatarUrl: "",
+    userCode: "",
     familyName: "",
     familyCount: 0,
     itemCount: null,
@@ -40,7 +41,7 @@ Page({
     const frame = guard.frame();
     if (!guard.isFrameCurrent(frame)) return;
     this.setData({
-      busy: true, ready: false, nickname: "", avatarUrl: "",
+      busy: true, ready: false, nickname: "", avatarUrl: "", userCode: "",
       familyName: "", familyCount: 0, itemCount: null, errorText: "",
     });
     try {
@@ -78,6 +79,7 @@ Page({
       noFamily: !scope.familyId,
       nickname: store.user ? store.user.nickname || "微信用户" : "",
       avatarUrl: store.user ? store.user.avatar_url || "" : "",
+      userCode: store.user ? store.user.user_code || "" : "",
       familyName: family ? family.name : "选择家庭",
       familyCount: store.families.length,
       itemCount: scope.familyId ? null : 0,
@@ -111,7 +113,7 @@ Page({
     guard.invalidate();
     this._sessionScope = null;
     this.setData({
-      nickname: "", avatarUrl: "", familyName: "", familyCount: 0, itemCount: null,
+      nickname: "", avatarUrl: "", userCode: "", familyName: "", familyCount: 0, itemCount: null,
       ready: false, busy: false, noFamily: false, errorText: "登录或家庭已变化，请重试",
     });
     return true;
@@ -203,6 +205,7 @@ Page({
         ready: true,
         nickname: store.user.nickname || "微信用户",
         avatarUrl: store.user.avatar_url || "",
+        userCode: store.user.user_code || "",
         familyName: cur ? cur.name : "选择家庭",
         familyCount: store.families.length,
         noFamily: !newScope.familyId,
@@ -219,9 +222,17 @@ Page({
       if (guard.isCurrent(finishOp)) this.setData({ busy: false });
     }
   },
+  onCopyUserCode() {
+    const code = this.data.userCode;
+    if (!code) return;
+    wx.setClipboardData({ data: code });
+  },
   onHowToJoin() {
     if (!this.active()) return;
-    showNotice({ title: "如何加入家庭", text: "请家人在家庭页分享邀请卡片给你，点击卡片即可加入。" });
+    showNotice({
+      title: "如何加入家庭",
+      text: "点击上方的用户ID复制，发给家庭组所有者；对方在「成员管理」里点「添加家庭成员」并填写你的ID，即可把你加入家庭组。",
+    });
   },
   onPrivacy() {
     if (!this.active()) return;

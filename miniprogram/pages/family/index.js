@@ -1,4 +1,4 @@
-/** P09 家庭组管理：改名、邀请、成员管理、退出（文档 7.2 / 7.3）。 */
+/** P09 家庭组管理：改名、按用户ID添加成员、成员管理、退出（文档 7.2 / 7.3）。 */
 const { request, ApiError } = require("../../services/api");
 const { ensureLogin, refreshMe } = require("../../services/auth");
 const { PageScope } = require("../../services/page-scope");
@@ -19,7 +19,6 @@ Page({
   },
   _guard: null,
   _sessionScope: null,
-  _share: null,
   _authFailed: false,
 
   onLoad() {
@@ -37,7 +36,6 @@ Page({
     guard.invalidate();
     const frame = guard.frame();
     if (!guard.isFrameCurrent(frame)) return;
-    this.clearShare();
     this.setData({ busy: true, ready: false, familyName: "", members: [], isOwner: false, errorText: "", noFamily: false, currentUserId: 0 });
     try {
       await ensureLogin();
@@ -65,7 +63,6 @@ Page({
   },
   onHide() {
     registerNotice(null);
-    this.clearShare();
     this._guard.hide();
   },
   onUnload() {
@@ -83,14 +80,9 @@ Page({
       store.isCurrentScope(this._sessionScope)
     );
   },
-  clearShare() {
-    this._share = null;
-    try { wx.hideShareMenu(); } catch (_) {}
-  },
   clearForScopeChange() {
     const guard = this._guard;
     guard.invalidate();
-    this.clearShare();
     this._sessionScope = null;
     this.setData({
       familyName: "", members: [], isOwner: false,
@@ -109,7 +101,6 @@ Page({
     if (!store.isCurrentScope(this._sessionScope)) return null;
     if (op.scope.familyId !== this._sessionScope.familyId) return null;
     const fid = op.scope.familyId;
-    this.clearShare();
     this.setData({ busy: true, ready: false, members: [], isOwner: false, errorText: "", noFamily: false });
     try {
       const data = await guard.run(op, (hooks) =>
@@ -132,7 +123,6 @@ Page({
         if (guard.scopeChanged(op)) { this.clearForScopeChange(); return null; }
         if (!guard.isCurrent(op)) return null;
         this._sessionScope = null;
-        this.clearShare();
         this.setData({ familyName: "", members: [], isOwner: false, ready: false, busy: false, currentUserId: 0, errorText: "成员信息已变化，请重试" });
         return null;
       }
@@ -175,7 +165,6 @@ Page({
     const wop = g.capture();
     if (!g.isCurrent(wop)) return;
     this.setData({ busy: true });
-    this.clearShare();
     try {
       await g.run(wop, (hooks) =>
         request({ path: `/families/${fid}`, method: "POST", data: { name }, isCancelled: hooks.isCancelled, onTask: hooks.onTask })
@@ -208,61 +197,44 @@ Page({
       this.setData({ errorText: message });
     }
   },
-  async onInvite() {
+  async onAddMember() {
     if (!this.active() || !this.data.isOwner) return;
     const guard = this._guard;
-    guard.invalidate();
     const op = guard.capture();
-    if (!guard.isCurrent(op)) return;
+    const uid = this._sessionScope.userId;
     const fid = this._sessionScope.familyId;
+    const raw = await promptNotice({
+      title: "添加家庭成员",
+      text: "请对方在「我的」页面复制自己的用户ID发给你",
+      placeholderText: "输入对方的用户ID",
+      confirmText: "添加",
+    });
+    const code = (raw || "").replace(/\s+/g, "").toUpperCase();
+    const g = this._guard;
+    if (!code || code.length > 32 || !g.isCurrent(op) || this.data.busy || !store.user || store.user.id !== uid) return;
+    g.invalidate();
+    const wop = g.capture();
+    if (!g.isCurrent(wop)) return;
     this.setData({ busy: true });
-    this.clearShare();
     try {
-      const data = await guard.run(op, (hooks) =>
+      await g.run(wop, (hooks) =>
         request({
-          path: `/families/${fid}/invite`, method: "POST",
+          path: `/families/${fid}/members`, method: "POST", data: { user_code: code },
           isCancelled: hooks.isCancelled, onTask: hooks.onTask,
         })
       );
-      if (guard.scopeChanged(op)) { this.clearForScopeChange(); return; }
-      if (!guard.isCurrent(op)) return;
-      const exp = Date.parse(data.expires_at);
-      if (
-        typeof data.invite_token === "string" &&
-        data.invite_token &&
-        data.share_path === `pages/family-join/index?invite_token=${encodeURIComponent(data.invite_token)}` &&
-        Number.isFinite(exp) && exp > Date.now()
-      ) {
-        this._share = { scope: op.scope, path: data.share_path, expiresAt: exp };
-        wx.showShareMenu({ menus: ["shareAppMessage"] });
-        showNotice({ text: "请点击右上角转发给家人", secondaryText: "邀请链接已准备好" });
-      } else {
-        this.setData({ errorText: "邀请生成失败" });
-      }
-      this.setData({ busy: false });
+      if (g.scopeChanged(wop)) { this.clearForScopeChange(); return; }
+      if (!g.isCurrent(wop)) return;
+      const fop = await this.loadMembers(wop);
+      if (!fop || !g.isCurrent(fop)) return;
+      showNotice("已添加");
     } catch (err) {
-      if (!guard.isFrameCurrent(op.generation)) return;
+      if (!g.isFrameCurrent(wop.generation)) return;
       this.setData({ busy: false });
-      if (guard.scopeChanged(op)) { this.clearForScopeChange(); return; }
-      if (!guard.isCurrent(op)) return;
-      const message = err instanceof ApiError ? err.message : "邀请失败，请重试";
-      this.setData({ errorText: message });
+      if (g.scopeChanged(wop)) { this.clearForScopeChange(); return; }
+      if (!g.isCurrent(wop)) return;
+      showNotice(err instanceof ApiError ? err.message : "添加失败，请重试");
     }
-  },
-  onShareAppMessage() {
-    const guard = this._guard;
-    const s = this._share;
-    const ok =
-      guard && guard.isFrameCurrent(guard.frame()) &&
-      this.data.ready && !this.data.busy && this.data.isOwner &&
-      s && store.isCurrentScope(s.scope) && s.expiresAt > Date.now();
-    if (!ok) {
-      return { title: "唔叽", path: "/pages/launch/index" };
-    }
-    return {
-      title: `邀请你加入家庭组「${this.data.familyName}」`,
-      path: `/${s.path}`,
-    };
   },
   async onRemoveMember(e) {
     if (!this.active() || !this.data.isOwner) return;
@@ -280,7 +252,6 @@ Page({
     const wop = g.capture();
     if (!g.isCurrent(wop)) return;
     this.setData({ busy: true });
-    this.clearShare();
     try {
       await g.run(wop, (hooks) =>
         request({ path: `/families/${fid}/members/${member.user_id}`, method: "DELETE", isCancelled: hooks.isCancelled, onTask: hooks.onTask })
@@ -329,7 +300,6 @@ Page({
     const wop = g.capture();
     if (!g.isCurrent(wop)) return;
     this.setData({ busy: true });
-    this.clearShare();
     try {
       await g.run(wop, (hooks) =>
         request({ path: `/families/${fid}/transfer`, method: "POST", data: { user_id: member.user_id }, isCancelled: hooks.isCancelled, onTask: hooks.onTask })
@@ -376,7 +346,6 @@ Page({
     const wop = g.capture();
     if (!g.isCurrent(wop)) return;
     this.setData({ busy: true });
-    this.clearShare();
     try {
       await g.run(wop, (hooks) =>
         request({ path: `/families/${fid}`, method: "DELETE", isCancelled: hooks.isCancelled, onTask: hooks.onTask })
@@ -451,7 +420,6 @@ Page({
       }
       const fop = g.capture();
       this._sessionScope = store.captureScope();
-      this.clearShare();
       this.setData({ familyName: "", members: [], isOwner: false, busy: false, ready: false, noFamily: !store.currentFamilyId });
       if (!g.isCurrent(fop)) return;
       const pages = getCurrentPages ? getCurrentPages() : [];

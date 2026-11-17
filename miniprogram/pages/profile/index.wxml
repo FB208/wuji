@@ -5,7 +5,11 @@
     <view wx:else class="avatar avatar-fallback">唔</view>
     <view class="account-info">
       <view class="nickname">{{nickname}}</view>
-      <view class="text-hint">{{busy ? "正在处理" : ready ? "已登录" : "请重新登录"}}</view>
+      <view wx:if="{{userCode}}" class="user-code brutal-pressable" bindtap="onCopyUserCode">
+        <text>ID：{{userCode}}</text>
+        <text class="user-code-copy">复制</text>
+      </view>
+      <view wx:else class="text-hint">{{busy ? "正在处理" : ready ? "已登录" : "请重新登录"}}</view>
     </view>
   </view>
 
@@ -17,7 +21,7 @@
       <view class="cell-value">{{familyName}} ▾</view>
     </view>
     <view class="cell brutal-card brutal-pressable" bindtap="goFamily">
-      <view>成员管理与邀请</view>
+      <view>成员管理</view>
       <view class="cell-value">{{familyCount}} 个家庭组 ›</view>
     </view>
     <view class="cell brutal-card brutal-pressable" bindtap="onCreateFamily">

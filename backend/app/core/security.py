@@ -3,6 +3,7 @@ import base64
 import hashlib
 import hmac
 import json
+import secrets
 import time
 from collections import defaultdict, deque
 from typing import Any
@@ -23,6 +24,20 @@ def _b64decode(data: str) -> bytes:
 def _sign(payload_b64: str, secret: str) -> str:
     sig = hmac.new(secret.encode("utf-8"), payload_b64.encode("ascii"), hashlib.sha256).digest()
     return _b64encode(sig)
+
+
+USER_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"  # 去掉易混淆的 0/O/1/I/L
+USER_CODE_LENGTH = 8
+
+
+def generate_user_code() -> str:
+    """生成 8 位随机用户 ID（约 8.5e11 种组合）。"""
+    return "".join(secrets.choice(USER_CODE_ALPHABET) for _ in range(USER_CODE_LENGTH))
+
+
+def normalize_user_code(raw: str) -> str:
+    """用户输入的 ID 去空格并转大写。"""
+    return "".join(raw.split()).upper()
 
 
 def create_signed_token(payload: dict[str, Any], *, ttl_seconds: int, purpose: str) -> str:

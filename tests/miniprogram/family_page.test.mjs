@@ -7,7 +7,7 @@ const PAGE = path.join(MP_DIR, "pages/family/index.js");
 function deferred() { let r, rej; const p = new Promise((res, j) => { r = res; rej = j; }); return { p, resolve: r, reject: rej }; }
 async function flush(n = 12) { for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0)); }
 function env(overrides = {}) {
-  const calls = { get: [], post: [], del: [], login: 0, me: 0, toasts: [], navs: [], backs: [], modals: [], shareMenu: 0, switchTab: [], aborts: [] };
+  const calls = { get: [], post: [], del: [], login: 0, me: 0, toasts: [], navs: [], backs: [], modals: [], switchTab: [], aborts: [] };
   const now = { value: 1700000000000 };
   class FakeDate extends Date { static now() { return now.value; } }
   const storage = new Map();
@@ -21,8 +21,6 @@ function env(overrides = {}) {
     switchTab: (o) => calls.switchTab.push(o.url),
     reLaunch: () => {},
     showModal: (o) => { calls.modals.push(o); if (overrides.modal) overrides.modal(o); },
-    showShareMenu: () => { calls.shareMenu++; },
-    hideShareMenu: () => {},
   });
   const storeMod = loadModule(K("store/index.js"), { globals: { wx: wxBase } });
   const store = storeMod.store;
@@ -34,7 +32,7 @@ function env(overrides = {}) {
     request: (o) => {
       if (o.onTask) o.onTask({ abort: () => calls.aborts.push(o.path) });
       if (o.method === "DELETE") { calls.del.push(o.path); return overrides.del ? overrides.del(o) : Promise.resolve({}); }
-      if (o.method === "POST") { calls.post.push({ path: o.path, body: JSON.parse(JSON.stringify(o.data || {})) }); return overrides.post ? overrides.post(o) : Promise.resolve({ invite_token: "t1", share_path: "pages/family-join/index?invite_token=t1", expires_at: new Date(now.value + 60000).toISOString() }); }
+      if (o.method === "POST") { calls.post.push({ path: o.path, body: JSON.parse(JSON.stringify(o.data || {})) }); return overrides.post ? overrides.post(o) : Promise.resolve({ user_id: 2, role: "member" }); }
       calls.get.push(o.path);
       return overrides.request ? overrides.request(o) : Promise.resolve({ members: [{ user_id: 1, nickname: "me", avatar_url: "", role: overrides.member ? "member" : "owner", joined_at: "x" }, { user_id: overrides.member ? 9 : 2, nickname: "m2", avatar_url: "", role: overrides.member ? "owner" : "member", joined_at: "x" }] });
     },
@@ -130,17 +128,51 @@ test("6 remove伪目标0DELETE真目标1", async () => {
   assert.equal(e.calls.del.length, 1);
   assert.match(e.calls.del[0], /families\/10\/members\/2/);
 });
-test("7 invite share cap+hidden generic", async () => {
+test("7 按用户ID添加成员：规范化输入、POST、刷新成员并提示", async () => {
   const e = env();
   await boot(e);
-  await e.page.onInvite();
+  e.page.onAddMember();
+  assert.equal(e.calls.modals.length, 1);
+  assert.equal(e.calls.modals[0].editable, true);
+  await e.calls.modals[0].success({ confirm: true, content: " ab cd 2345 " });
   await flush();
-  assert.equal(e.calls.post.length, 1);
-  const share = e.page.onShareAppMessage();
-  assert.match(share.path, /family-join\/index\?invite_token=t1/);
-  e.page.onHide();
-  const s2 = e.page.onShareAppMessage();
-  assert.equal(s2.path, "/pages/launch/index");
+  assert.deepEqual(e.calls.post, [{ path: "/families/10/members", body: { user_code: "ABCD2345" } }]);
+  assert.equal(e.calls.get.length, 2);
+  assert.equal(e.page.data.busy, false);
+  assert.equal(e.calls.toasts.filter((t) => t === "已添加").length, 1);
+});
+test("7b 添加成员：空输入不请求，非所有者不弹窗", async () => {
+  const e = env();
+  await boot(e);
+  e.page.onAddMember();
+  await e.calls.modals[0].success({ confirm: true, content: "   " });
+  await flush();
+  assert.equal(e.calls.post.length, 0);
+  const m = env({ member: true });
+  await boot(m);
+  m.page.onAddMember();
+  assert.equal(m.calls.modals.length, 0);
+});
+test("7c 添加成员失败显示后端提示且不清空页面", async () => {
+  let e;
+  e = env({ post: () => Promise.reject(new e.apiMod.ApiError({ code: "NOT_FOUND", message: "未找到该用户ID，请核对后重试" }, 404)) });
+  await boot(e);
+  e.page.onAddMember();
+  await e.calls.modals[0].success({ confirm: true, content: "ZZZZ2345" });
+  await flush();
+  assert.equal(e.page.data.busy, false);
+  assert.equal(e.page.data.errorText, "");
+  assert.equal(e.page.data.members.length, 2);
+  assert.ok(e.calls.toasts.includes("未找到该用户ID，请核对后重试"));
+});
+test("7d 添加成员确认前换家不POST", async () => {
+  const e = env();
+  await boot(e);
+  e.page.onAddMember();
+  e.store.applyMe({ id: 1 }, [{ id: 20, name: "B", owner_user_id: 1, role: "owner" }]);
+  await e.calls.modals[0].success({ confirm: true, content: "ABCD2345" });
+  await flush();
+  assert.equal(e.calls.post.length, 0);
 });
 test("8 leave真DELETE_self→navback", async () => {
   const e = env({ member: true, refreshMe: (s) => { s.applyMe({ id: 1 }, []); return Promise.resolve({}); } });
@@ -184,20 +216,6 @@ test("c rename Me中family变B不清算A成功", async () => {
   await flush();
   assert.equal(e.calls.toasts.filter((t) => t === "已修改").length, 0);
 });
-test("d invite pending换家0旧cap+suffix拒绝", async () => {
-  const d = deferred();
-  const e = env({ post: () => d.p });
-  await boot(e);
-  e.page.onInvite();
-  await flush(2);
-  assert.equal(e.calls.post.length, 1);
-  e.store.applyMe({ id: 1 }, [{ id: 99, name: "g", owner_user_id: 1, role: "member" }]);
-  d.resolve({ invite_token: "t1", share_path: "pages/family-join/index?invite_token=t1&x=evil", expires_at: new Date(Date.now() + 60000).toISOString() });
-  await flush();
-  assert.equal(e.page._share, null);
-  const share = e.page.onShareAppMessage();
-  assert.equal(share.path, "/pages/launch/index");
-});
 test("e owner42无数字1硬编码真实remove", async () => {
   const e = env({
     cold: true,
@@ -222,25 +240,6 @@ test("f rename成功Me+members二GET+toast", async () => {
   assert.equal(e.calls.me, 1);
   assert.equal(e.calls.get.length, 2);
   assert.equal(e.calls.toasts.filter((t) => t === "已修改").length, 1);
-});
-test("i 真FakeDate在expiry前1ms可share、到期generic，不发新请求", async () => {
-  const e = env();
-  await boot(e);
-  await e.page.onInvite();
-  assert.equal(e.calls.post.length, 1);
-  e.now.value += 59999;
-  const r1 = e.page.onShareAppMessage();
-  assert.match(r1.path, /family-join/);
-  e.now.value++;
-  assert.equal(e.page.onShareAppMessage().path, "/pages/launch/index");
-  assert.equal(e.calls.post.length, 1);
-});
-test("i2 suffix sharePath拒绝", async () => {
-  const e = env({ post: () => Promise.resolve({ invite_token: "t1", share_path: "pages/family-join/index?invite_token=t1&evil=1", expires_at: new Date(Date.now() + 60000).toISOString() }) });
-  await boot(e);
-  await e.page.onInvite();
-  await flush();
-  assert.equal(e.page._share, null);
 });
 test("iv leave Me保留旧FID→未确认nav0", async () => {
   const e = env({ member: true, refreshMe: (s) => { s.applyMe({ id: 1 }, [{ id: 10, name: "f", owner_user_id: 9, role: "member" }]); return Promise.resolve({}); } });
@@ -321,7 +320,6 @@ for (const uid of [1, 2]) {
     assert.equal(e.page.data.members.length, 0);
     assert.equal(e.page.data.ready, false);
     assert.equal(e.page.data.busy, false);
-    assert.equal(e.page._share, null);
     assert.equal(e.calls.toasts.length, 0);
   });
 }
@@ -372,7 +370,7 @@ test("未知DELETE结果错误面板必须刷新，旧队列按钮不再写", as
   assert.notEqual(e.page.data.errorText, "");
   e.page.onRename();
   e.page.onRemoveMember({ currentTarget: { dataset: { id: 2 } } });
-  await e.page.onInvite();
+  await e.page.onAddMember();
   assert.equal(e.calls.modals.length, 1);
   assert.equal(e.calls.del.length, 1);
   assert.equal(e.calls.post.length, 0);

@@ -12,6 +12,10 @@ async def get_user_by_openid(db: AsyncSession, openid: str) -> User | None:
     return (await db.execute(select(User).where(User.openid == openid))).scalar_one_or_none()
 
 
+async def get_user_by_code(db: AsyncSession, user_code: str) -> User | None:
+    return (await db.execute(select(User).where(User.user_code == user_code))).scalar_one_or_none()
+
+
 async def get_user(db: AsyncSession, user_id: int) -> User | None:
     return await db.get(User, user_id)
 

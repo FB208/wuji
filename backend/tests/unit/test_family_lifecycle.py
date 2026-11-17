@@ -157,3 +157,61 @@ async def test_delete_account_dissolves_owned_leaves_shared_removes_user():
     assert shared.revision == 4
     assert idem_deleted == [1]
     assert db.commits == 1
+
+
+class _AddDB(_FakeDB):
+    def __init__(self):
+        super().__init__()
+        self.added = []
+
+    def add(self, obj):
+        self.added.append(obj)
+
+
+async def test_add_member_by_code_success_normalizes_input():
+    db = _AddDB()
+    family = _family()
+    target = SimpleNamespace(id=2, nickname="家人", avatar_url=None)
+    get_by_code = AsyncMock(return_value=target)
+    with (
+        patch.object(svc.repos, "get_membership", new=AsyncMock(side_effect=lambda d, f, u: _member("owner") if u == 1 else None)),
+        patch.object(svc.repos, "get_user_by_code", new=get_by_code),
+        patch.object(svc.repos, "get_family_for_update", new=AsyncMock(return_value=family)),
+    ):
+        out = await svc.add_member_by_code(db, 10, 1, " ab cd 2345 ")
+    get_by_code.assert_awaited_once_with(db, "ABCD2345")
+    assert out["user_id"] == 2 and out["role"] == "member"
+    assert len(db.added) == 1 and db.added[0].user_id == 2 and db.added[0].role == "member"
+    assert family.revision == 2
+    assert db.commits == 1
+
+
+async def test_add_member_by_code_errors():
+    # 非所有者
+    db = _AddDB()
+    with patch.object(svc.repos, "get_membership", new=AsyncMock(return_value=_member("member"))):
+        with pytest.raises(AppError) as ei:
+            await svc.add_member_by_code(db, 10, 1, "ABCD2345")
+    assert ei.value.code == "FAMILY_FORBIDDEN"
+
+    # ID 不存在
+    db = _AddDB()
+    with (
+        patch.object(svc.repos, "get_membership", new=AsyncMock(return_value=_member("owner"))),
+        patch.object(svc.repos, "get_user_by_code", new=AsyncMock(return_value=None)),
+    ):
+        with pytest.raises(AppError) as ei:
+            await svc.add_member_by_code(db, 10, 1, "ZZZZZZZZ")
+    assert ei.value.code == "NOT_FOUND"
+
+    # 已是成员
+    db = _AddDB()
+    with (
+        patch.object(svc.repos, "get_membership", new=AsyncMock(return_value=_member("owner"))),
+        patch.object(svc.repos, "get_user_by_code", new=AsyncMock(return_value=SimpleNamespace(id=2, nickname=None, avatar_url=None))),
+        patch.object(svc.repos, "get_family_for_update", new=AsyncMock(return_value=_family())),
+    ):
+        with pytest.raises(AppError) as ei:
+            await svc.add_member_by_code(db, 10, 1, "ABCD2345")
+    assert ei.value.code == "ALREADY_MEMBER"
+    assert db.added == [] and db.commits == 0

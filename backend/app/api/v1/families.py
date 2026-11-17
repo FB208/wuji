@@ -4,9 +4,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.core.errors import ok
+from app.core.security import rate_limiter
 from app.db.session import get_db
 from app.models.tables import User
 from app.schemas.schemas import (
+    FamilyAddMemberRequest,
     FamilyCreateRequest,
     FamilyJoinRequest,
     FamilyPatchRequest,
@@ -84,6 +86,20 @@ async def list_members(
     db: AsyncSession = Depends(get_db),
 ):
     return ok(request, {"members": await family_service.list_members(db, family_id, user.id)})
+
+
+@router.post("/families/{family_id}/members")
+async def add_member(
+    request: Request,
+    family_id: int,
+    body: FamilyAddMemberRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # 限流，防止逐个尝试用户 ID
+    rate_limiter.check(f"add_member:{user.id}", limit=10, window_seconds=60)
+    data = await family_service.add_member_by_code(db, family_id, user.id, body.user_code)
+    return ok(request, data)
 
 
 @router.delete("/families/{family_id}/members/{user_id}")

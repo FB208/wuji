@@ -1,7 +1,7 @@
 /** HTTP 封装：统一响应结构、令牌、错误码处理（文档 13.1 / 13.6）。 */
 const { showNotice } = require("./notice");
 
-const API_BASE_URL = "http://wuji.agnet.top/api/v1"; // 线上地址
+const API_BASE_URL = "https://wuji.markup.com.cn/api/v1"; // 线上地址
 // const API_BASE_URL = "http://192.168.13.196:8000/api/v1";  //本机调试
 
 const TOKEN_KEY = "wuji_access_token";

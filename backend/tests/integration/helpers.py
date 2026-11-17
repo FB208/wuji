@@ -20,7 +20,7 @@ def _next() -> int:
 
 async def make_user(db: AsyncSession, nickname: str | None = None) -> User:
     n = _next()
-    user = User(openid=f"openid_test_{n}", nickname=nickname or f"用户{n}")
+    user = User(openid=f"openid_test_{n}", user_code=f"T{n:07d}", nickname=nickname or f"用户{n}")
     db.add(user)
     await db.flush()
     return user

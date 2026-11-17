@@ -40,11 +40,14 @@ class User(Base):
     __table_args__ = (
         UniqueConstraint("openid", name="uk_users_openid"),
         UniqueConstraint("unionid", name="uk_users_unionid"),
+        UniqueConstraint("user_code", name="uk_users_code"),
         MYSQL_ARGS,
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     openid: Mapped[str] = mapped_column(String(64), nullable=False)
+    # 对外展示的随机用户 ID，家庭组所有者凭它添加成员（不暴露自增主键，防止被枚举）
+    user_code: Mapped[str] = mapped_column(String(16), nullable=False)
     unionid: Mapped[str | None] = mapped_column(String(64), nullable=True)
     nickname: Mapped[str | None] = mapped_column(String(64), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)

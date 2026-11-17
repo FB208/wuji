@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.errors import AppError, auth_required, family_forbidden, not_found
-from app.core.security import create_signed_token, verify_signed_token
+from app.core.security import create_signed_token, normalize_user_code, verify_signed_token
 from app.models.tables import Family, FamilyMember, utcnow
 from app.repositories import repos
 
@@ -109,6 +109,24 @@ async def join_family(db: AsyncSession, user_id: int, invite_token: str) -> dict
         family.revision += 1
         await db.commit()
     return {"family_id": family_id, "family_name": preview["family_name"]}
+
+
+async def add_member_by_code(db: AsyncSession, family_id: int, operator_id: int, user_code: str) -> dict:
+    """所有者填写对方的用户 ID，直接把对方加入家庭组（未认证小程序无法分享邀请卡片）。"""
+    await require_owner(db, family_id, operator_id)
+    code = normalize_user_code(user_code)
+    target = await repos.get_user_by_code(db, code) if code else None
+    if target is None:
+        raise not_found("未找到该用户ID，请核对后重试")
+    family = await repos.get_family_for_update(db, family_id)
+    if family is None:
+        raise not_found("家庭组不存在")
+    if await repos.get_membership(db, family_id, target.id) is not None:
+        raise AppError("ALREADY_MEMBER", "对方已经在该家庭组中", status_code=400)
+    db.add(FamilyMember(family_id=family_id, user_id=target.id, role="member"))
+    family.revision += 1
+    await db.commit()
+    return {"user_id": target.id, "nickname": target.nickname, "avatar_url": target.avatar_url, "role": "member"}
 
 
 async def list_members(db: AsyncSession, family_id: int, user_id: int) -> list[dict]:

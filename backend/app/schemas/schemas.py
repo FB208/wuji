@@ -15,6 +15,7 @@ class WechatLoginRequest(BaseModel):
 
 class UserOut(BaseModel):
     id: int
+    user_code: str
     nickname: str | None
     avatar_url: str | None
 
@@ -64,6 +65,10 @@ class InvitePreviewOut(BaseModel):
     family_id: int
     family_name: str
     owner_nickname: str | None
+
+
+class FamilyAddMemberRequest(BaseModel):
+    user_code: str = Field(min_length=1, max_length=32)
 
 
 class FamilyTransferRequest(BaseModel):

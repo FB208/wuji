@@ -137,7 +137,7 @@ for (const name of ["home", "profile"]) {
     } else {
       assert.equal(e.page.data.itemCount, 0);
       e.page.onHowToJoin();
-      assert.match(e.calls.toast[e.calls.toast.length - 1], /邀请卡片/);
+      assert.match(e.calls.toast[e.calls.toast.length - 1], /添加家庭成员/);
       e.page.onCreateFamily();
       assert.equal(e.calls.modal[0].editable, true);
     }
