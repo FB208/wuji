@@ -29,3 +29,42 @@ test("store: setFamilies 在缓存 id 失效时回落到首个家庭", () => {
   ]);
   assert.equal(store.currentFamilyId, 3);
 });
+
+test("默认家庭只在启动时优先于本地记录，刷新和手动切换不跳回", () => {
+  const store = loadStore();
+  const families = [{ id: 10 }, { id: 20 }];
+  const user = { id: 1, default_family_id: 20 };
+  store.pendingFamilyId = 10;
+  store.applyMe(user, families);
+  assert.equal(store.currentFamilyId, 20);
+  store.setCurrentFamily(10);
+  const scope = store.captureScope();
+  store.applyMe(user, families);
+  assert.equal(store.currentFamilyId, 10);
+  assert.equal(store.isCurrentScope(scope), true);
+  store.clearSession();
+  store.applyMe(user, families);
+  assert.equal(store.currentFamilyId, 20);
+});
+
+test("默认未设置或失效时沿用有效记录，无家庭时归零", () => {
+  for (const defaultId of [null, 999]) {
+    const store = loadStore();
+    store.pendingFamilyId = 20;
+    store.applyMe({ id: 1, default_family_id: defaultId }, [{ id: 10 }, { id: 20 }]);
+    assert.equal(store.currentFamilyId, 20);
+    store.applyMe({ id: 1, default_family_id: null }, [{ id: 10 }]);
+    assert.equal(store.currentFamilyId, 10);
+    store.applyMe({ id: 1, default_family_id: null }, []);
+    assert.equal(store.currentFamilyId, 0);
+  }
+});
+
+test("主动加入家庭的明确选择优先，切换账号重新应用自己的默认家庭", () => {
+  const store = loadStore();
+  const families = [{ id: 10 }, { id: 20 }];
+  store.applyMe({ id: 1, default_family_id: 10 }, families, 20);
+  assert.equal(store.currentFamilyId, 20);
+  store.applyMe({ id: 2, default_family_id: 10 }, families);
+  assert.equal(store.currentFamilyId, 10);
+});

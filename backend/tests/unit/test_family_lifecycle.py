@@ -87,11 +87,13 @@ async def test_dissolve_owner_only_retires_images_deletes_family():
         patch.object(svc.repos, "get_family_for_update", new=AsyncMock(return_value=family)),
         patch.object(svc.repos, "list_family_image_urls", new=AsyncMock(return_value=["u1", "u2"])),
         patch.object(svc.repos, "mark_image_pending_delete", new=AsyncMock(side_effect=lambda d, url, after: marked.append(url))),
+        patch.object(svc.repos, "clear_default_family", new=AsyncMock()) as clear_default,
     ):
         await svc.dissolve_family(db, 10, 1)
     assert db.deleted == [family]
     assert marked == ["u1", "u2"]
     assert db.commits == 1
+    clear_default.assert_awaited_once_with(db, 10)
 
     db = _FakeDB()
     with patch.object(svc.repos, "get_membership", new=AsyncMock(return_value=_member("member"))):
@@ -132,7 +134,7 @@ async def test_delete_account_dissolves_owned_leaves_shared_removes_user():
     owned = SimpleNamespace(id=10)
     shared = SimpleNamespace(id=20, revision=3)
     member = _member("member")
-    user = SimpleNamespace(id=1)
+    user = SimpleNamespace(id=1, avatar_url=None)
     dissolved = []
     idem_deleted = []
 
@@ -145,6 +147,7 @@ async def test_delete_account_dissolves_owned_leaves_shared_removes_user():
         patch.object(svc.repos, "get_membership", new=AsyncMock(return_value=member)),
         patch.object(svc.repos, "list_family_image_urls", new=AsyncMock(return_value=["u1"])),
         patch.object(svc.repos, "mark_image_pending_delete", new=AsyncMock()),
+        patch.object(svc.repos, "clear_default_family", new=AsyncMock()) as clear_default,
         patch.object(svc.repos, "delete_idempotency_for_user", new=AsyncMock(side_effect=lambda d, u: idem_deleted.append(u))),
         patch.object(svc.repos, "get_user", new=AsyncMock(return_value=user)),
         patch.object(svc, "_dissolve_locked", wraps=svc._dissolve_locked) as spy,
@@ -157,6 +160,46 @@ async def test_delete_account_dissolves_owned_leaves_shared_removes_user():
     assert shared.revision == 4
     assert idem_deleted == [1]
     assert db.commits == 1
+    clear_default.assert_awaited_once_with(db, 10)
+
+
+async def test_default_family_requires_membership_and_allows_regular_members():
+    """默认设置属于用户，普通成员也能设置，已失去资格的用户不能设置。"""
+    for membership in [_member("member"), None]:
+        db = _FakeDB()
+        user = SimpleNamespace(id=2, default_family_id=None)
+        with (
+            patch.object(svc.repos, "get_family_for_update", new=AsyncMock(return_value=_family())),
+            patch.object(svc.repos, "get_user_for_update", new=AsyncMock(return_value=user)),
+            patch.object(svc.repos, "get_user", new=AsyncMock(return_value=user)),
+            patch.object(svc.repos, "get_membership_for_update", new=AsyncMock(return_value=membership)),
+        ):
+            if membership is None:
+                with pytest.raises(AppError) as error:
+                    await svc.set_default_family(db, 2, 10)
+                assert error.value.code == "FAMILY_FORBIDDEN"
+                assert db.commits == 0
+                assert user.default_family_id is None
+            else:
+                for _ in range(2):
+                    assert await svc.set_default_family(db, 2, 10) == {"default_family_id": 10}
+                assert user.default_family_id == 10
+
+
+async def test_remove_member_clears_only_target_default_in_same_transaction():
+    """移除他人及主动退出均清理该用户的默认家庭。"""
+    for operator in [1, 2]:
+        db = _FakeDB()
+        members = {1: _member("owner"), 2: _member("member")}
+        with (
+            patch.object(svc.repos, "get_family_for_update", new=AsyncMock(return_value=_family())),
+            patch.object(svc.repos, "get_membership_for_update", new=AsyncMock(side_effect=lambda d, f, u: members[u])),
+            patch.object(svc.repos, "clear_default_family", new=AsyncMock()) as clear_default,
+        ):
+            await svc.remove_member(db, 10, operator, 2)
+        clear_default.assert_awaited_once_with(db, 10, 2)
+        assert db.deleted == [members[2]]
+        assert db.commits == 1
 
 
 class _AddDB(_FakeDB):

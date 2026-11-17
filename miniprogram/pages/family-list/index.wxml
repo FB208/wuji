@@ -15,8 +15,21 @@
         data-id="{{item.id}}"
         bindtap="onPick"
       >
-        <view class="row-name">{{item.name}}</view>
-        <view wx:if="{{item.current}}" class="row-mark">当前</view>
+        <view class="row-info">
+          <view class="row-name">{{item.name}}</view>
+          <view wx:if="{{item.current || item.isDefault}}" class="row-marks">
+            <text wx:if="{{item.current}}" class="row-mark">当前</text>
+            <text wx:if="{{item.isDefault}}" class="default-mark">默认</text>
+          </view>
+        </view>
+        <button
+          wx:if="{{!item.isDefault}}"
+          class="default-button brutal-pressable"
+          data-id="{{item.id}}"
+          catchtap="onSetDefault"
+          loading="{{savingDefaultId === item.id}}"
+          disabled="{{savingDefaultId > 0}}"
+        >设为默认</button>
       </view>
     </view>
 

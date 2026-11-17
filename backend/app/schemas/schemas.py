@@ -18,6 +18,7 @@ class UserOut(BaseModel):
     user_code: str
     nickname: str | None
     avatar_url: str | None
+    default_family_id: int | None
 
 
 class LoginOut(BaseModel):
@@ -27,6 +28,10 @@ class LoginOut(BaseModel):
 
 
 # ---------- 家庭组 ----------
+class DefaultFamilyRequest(BaseModel):
+    family_id: int = Field(gt=0)
+
+
 class FamilyOut(BaseModel):
     id: int
     name: str

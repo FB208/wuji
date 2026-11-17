@@ -7,7 +7,7 @@ from app.core.errors import ok
 from app.core.security import rate_limiter
 from app.db.session import get_db
 from app.models.tables import User
-from app.schemas.schemas import WechatLoginRequest
+from app.schemas.schemas import DefaultFamilyRequest, WechatLoginRequest
 from app.services import auth_service, family_service, profile_service
 
 router = APIRouter()
@@ -36,6 +36,18 @@ async def me(
             "families": families,
         },
     )
+
+
+@router.post("/me/default-family")
+async def set_default_family(
+    request: Request,
+    body: DefaultFamilyRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """设置登录用户的默认家庭，服务层校验当前成员关系。"""
+    data = await family_service.set_default_family(db, user.id, body.family_id)
+    return ok(request, data)
 
 
 @router.post("/me/profile")

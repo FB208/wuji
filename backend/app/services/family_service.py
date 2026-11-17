@@ -21,12 +21,15 @@ async def require_membership(db: AsyncSession, family_id: int, user_id: int) -> 
 async def lock_membership_scope(
     db: AsyncSession, user_id: int, family_id: int
 ) -> tuple[FamilyMember, Family]:
+    """统一按家庭、用户、成员顺序加锁，与默认设置及家庭清理保持一致。"""
+    family = await repos.get_family_for_update(db, family_id)
+    if family is None:
+        raise family_forbidden()
     user = await repos.get_user_for_update(db, user_id)
     if user is None:
         raise auth_required()
-    family = await repos.get_family_for_update(db, family_id)
     member = await repos.get_membership_for_update(db, family_id, user_id)
-    if family is None or member is None:
+    if member is None:
         raise family_forbidden()
     return member, family
 
@@ -41,6 +44,15 @@ async def require_owner(db: AsyncSession, family_id: int, user_id: int) -> Famil
 async def list_families(db: AsyncSession, user_id: int) -> list[dict]:
     """一次聚合查询读取家庭资料及成员数。"""
     return await repos.list_user_family_summaries(db, user_id)
+
+
+async def set_default_family(db: AsyncSession, user_id: int, family_id: int) -> dict:
+    """成员可设置自己的默认家庭；重复设置保持幂等，不改变成员关系。"""
+    await lock_membership_scope(db, user_id, family_id)
+    user = await repos.get_user(db, user_id)
+    user.default_family_id = family_id
+    await db.commit()
+    return {"default_family_id": family_id}
 
 
 async def create_family(db: AsyncSession, user_id: int, name: str) -> dict:
@@ -147,21 +159,24 @@ async def list_members(db: AsyncSession, family_id: int, user_id: int) -> list[d
 
 async def remove_member(db: AsyncSession, family_id: int, operator_id: int, target_user_id: int) -> None:
     """所有者移除成员；成员可退出（移除自己）；所有者需先转让或解散（文档 7.2）。"""
-    member = await require_membership(db, family_id, operator_id)
+    family = await repos.get_family_for_update(db, family_id)
+    if family is None:
+        raise not_found("家庭组不存在")
+    member = await repos.get_membership_for_update(db, family_id, operator_id)
+    if member is None:
+        raise family_forbidden()
     if operator_id == target_user_id:
         if member.role == "owner":
             raise AppError("OWNER_CANNOT_LEAVE", "所有者需先转让或解散家庭组", status_code=400)
     elif member.role != "owner":
         raise family_forbidden("仅家庭组所有者可移除成员")
 
-    target = await repos.get_membership(db, family_id, target_user_id)
+    target = await repos.get_membership_for_update(db, family_id, target_user_id)
     if target is None:
         raise not_found("成员不存在")
     if target.role == "owner" and operator_id != target_user_id:
         raise family_forbidden("不能移除家庭组所有者")
-    family = await repos.get_family_for_update(db, family_id)
-    if family is None:
-        raise not_found("家庭组不存在")
+    await repos.clear_default_family(db, family_id, target_user_id)
     await db.delete(target)
     family.revision += 1
     await db.commit()
@@ -193,9 +208,11 @@ async def _retire_family_images(db: AsyncSession, family_id: int) -> None:
 
 
 async def _dissolve_locked(db: AsyncSession, family_id: int) -> None:
+    """锁定家庭并清理成员的默认偏好及家庭资源。"""
     family = await repos.get_family_for_update(db, family_id)
     if family is None:
         raise not_found("家庭组不存在")
+    await repos.clear_default_family(db, family_id)
     await _retire_family_images(db, family_id)
     await db.delete(family)
 

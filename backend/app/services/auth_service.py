@@ -42,6 +42,7 @@ def user_payload(user: User) -> dict:
         "user_code": user.user_code,
         "nickname": user.nickname,
         "avatar_url": user.avatar_url,
+        "default_family_id": user.default_family_id,
     }
 
 
@@ -77,22 +78,25 @@ async def wechat_login(
         await db.flush()
         db.add(FamilyMember(family_id=family.id, user_id=user.id, role="owner"))
         await db.commit()
-        default_family_id = family.id
+        current_family_id = family.id
     else:
         families = await repos.list_user_families(db, user.id)
         if families:
-            default_family_id = families[0][0].id
+            family_ids = {family.id for family, _ in families}
+            current_family_id = (
+                user.default_family_id if user.default_family_id in family_ids else families[0][0].id
+            )
         else:
             # 兜底：用户存在但没有任何家庭组
             family = Family(name="我的家", owner_user_id=user.id)
             db.add(family)
             await db.flush()
             db.add(FamilyMember(family_id=family.id, user_id=user.id, role="owner"))
-            default_family_id = family.id
+            current_family_id = family.id
         await db.commit()
 
     return {
         "access_token": create_access_token(user.id),
         "user": user_payload(user),
-        "current_family_id": default_family_id,
+        "current_family_id": current_family_id,
     }

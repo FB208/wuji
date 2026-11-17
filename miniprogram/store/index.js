@@ -8,6 +8,7 @@ class Store {
   currentFamilyId = 0;
   scopeVersion = 0;
   pendingFamilyId = null;
+  initializedUserId = 0;
 
   bump() {
     this.scopeVersion += 1;
@@ -33,6 +34,7 @@ class Store {
     const prev = this.user ? this.user.id : 0;
     this.user = user;
     if (user.id !== prev) {
+      this.initializedUserId = 0;
       this.families = [];
       this.currentFamilyId = 0;
       this.pendingFamilyId = null;
@@ -88,11 +90,17 @@ class Store {
     const sameIdentity = prevUserId === 0 || prevUserId === user.id;
     const currentFamilyId = sameIdentity ? this.currentFamilyId : 0;
     const pendingFamilyId = sameIdentity ? this.pendingFamilyId : null;
+    // 默认家庭仅在账号本次运行首次初始化时应用，刷新资料不覆盖手动切换。
+    const startupDefault =
+      this.initializedUserId !== user.id && families.some((f) => f.id === user.default_family_id)
+        ? user.default_family_id
+        : null;
     this.user = user;
     this.families = families;
     if (user.id !== prevUserId) this.bump();
     const preferred =
       preferredFamilyId ??
+      startupDefault ??
       (pendingFamilyId !== null ? pendingFamilyId : currentFamilyId);
     if (families.some((f) => f.id === preferred)) {
       this.applyCurrentFamily(preferred);
@@ -100,12 +108,14 @@ class Store {
       this.applyCurrentFamily(families.length > 0 ? families[0].id : 0);
     }
     this.pendingFamilyId = null;
+    this.initializedUserId = user.id;
   }
 
   clearSession() {
     this.user = null;
     this.families = [];
     this.pendingFamilyId = null;
+    this.initializedUserId = 0;
     if (this.currentFamilyId !== 0) {
       this.currentFamilyId = 0;
     }

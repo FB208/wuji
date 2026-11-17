@@ -154,14 +154,17 @@ function installAuthRecovery() {
   registerAuthRecovery(refreshCredentials);
 }
 
-/** 一次运行只初始化一次登录；并发页面共享初始化，业务变更显式调用 refreshMe。 */
+/** 共享首次登录；refresh 要求已登录时也获取最新资料，冷启动不重复请求。 */
 async function ensureLogin(options = {}) {
   if (options.interactive) unblockAutoLogin();
   if (isBlocked()) {
     throw new ApiError({ code: "LOGIN_BLOCKED", message: "请点击重新登录", retryable: false });
   }
   const token = getToken();
-  if (token && token === initializedToken) return;
+  if (token && token === initializedToken) {
+    if (options.refresh) await refreshMe();
+    return;
+  }
   if (loginInflight) return loginInflight;
   const pending = (async () => {
     const hadToken = !!token;
@@ -201,7 +204,15 @@ function applyProfile(user) {
   store.setUser(user);
 }
 
+/** 更新启动偏好而不改变当前家庭，并使先前发出的资料请求失效。 */
+function applyDefaultFamily(userId, familyId) {
+  if (!store.user || store.user.id !== userId) throw authCancelled();
+  meSeq += 1;
+  store.setUser({ ...store.user, default_family_id: familyId });
+}
+
 module.exports = {
+  applyDefaultFamily,
   applyProfile,
   blockAutoLogin,
   unblockAutoLogin,

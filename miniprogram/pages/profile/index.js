@@ -45,12 +45,12 @@ Page({
       familyName: "", familyCount: 0, itemCount: null, errorText: "",
     });
     try {
-      await ensureLogin();
+      await ensureLogin({ refresh: true });
     } catch (err) {
       if (!guard.isFrameCurrent(frame)) return;
       this._authFailed = true;
       this._sessionScope = null;
-      this.setData({ busy: false, ready: false, errorText: "登录失败，请重试" });
+      this.setData({ busy: false, ready: false, errorText: "加载失败，请重试" });
       if (err instanceof ApiError && err.code === "LOGIN_BLOCKED") {
         wx.reLaunch({ url: "/pages/launch/index" });
       }

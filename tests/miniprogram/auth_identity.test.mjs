@@ -83,6 +83,35 @@ const ME = (uid, families = []) => ({ statusCode: 200, data: { data: { user: { i
 const ERR = (code, sc) => ({ statusCode: sc, data: { error: { code, message: "x", retryable: false } } });
 const FAM1 = { id: 10, name: "f", owner_user_id: 1, role: "owner" };
 
+test("显式刷新获取新增家庭，冷启动只请求一次资料", async () => {
+  const e = env();
+  e.storage.set("wuji_access_token", "tok1");
+  e.handlers["/me"] = () => ME(1, [FAM1]);
+  await e.auth.ensureLogin({ refresh: true });
+  assert.equal(e.calls.req.length, 1);
+  e.handlers["/me"] = () => ME(1, [FAM1, { id: 20, name: "新家庭" }]);
+  await e.auth.ensureLogin({ refresh: true });
+  assert.equal(e.calls.req.length, 2);
+  assert.equal(e.store.families.length, 2);
+  assert.equal(e.store.currentFamilyId, 10);
+});
+
+test("默认设置不切换当前家庭，先前资料响应不能覆盖保存结果", async () => {
+  const e = env();
+  e.storage.set("wuji_access_token", "tok1");
+  e.store.applyMe({ id: 1, default_family_id: null }, [FAM1, { id: 20 }]);
+  const scope = e.store.captureScope();
+  e.handlers["/me"] = () => "defer";
+  const pending = e.auth.refreshMe();
+  await flush(3);
+  e.auth.applyDefaultFamily(1, 20);
+  e.release(0, ME(1, [FAM1]));
+  await assert.rejects(pending, (err) => err.code === "CANCELLED");
+  assert.equal(e.store.user.default_family_id, 20);
+  assert.equal(e.store.currentFamilyId, 10);
+  assert.equal(e.store.isCurrentScope(scope), true);
+});
+
 test("1 warm token2+storeUID1，/me返2→LOGIN_BLOCKED清光", async () => {
   const e = env();
   e.store.applyMe({ id: 1 }, [FAM1]);

@@ -41,6 +41,7 @@ class User(Base):
         UniqueConstraint("openid", name="uk_users_openid"),
         UniqueConstraint("unionid", name="uk_users_unionid"),
         UniqueConstraint("user_code", name="uk_users_code"),
+        Index("idx_users_default_family", "default_family_id"),
         MYSQL_ARGS,
     )
 
@@ -51,6 +52,8 @@ class User(Base):
     unionid: Mapped[str | None] = mapped_column(String(64), nullable=True)
     nickname: Mapped[str | None] = mapped_column(String(64), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # 个人启动偏好；成员移除或家庭解散时在业务事务内清理。
+    default_family_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DT3, nullable=False, server_default=func.now(3))
     updated_at: Mapped[datetime] = mapped_column(
         DT3, nullable=False, server_default=func.now(3), onupdate=func.now(3)

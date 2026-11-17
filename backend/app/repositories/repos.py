@@ -1,7 +1,7 @@
 """数据访问层。所有物品查询必须同时包含 family_id 和 status=1（文档 12.4）。"""
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.tables import Family, FamilyMember, IdempotencyRecord, Item, UploadedImage, User
@@ -26,6 +26,14 @@ async def get_user_for_update(db: AsyncSession, user_id: int) -> User | None:
 
 
 # ---------- 家庭组 ----------
+async def clear_default_family(db: AsyncSession, family_id: int, user_id: int | None = None) -> None:
+    """清除指向指定家庭的偏好；调用方先锁家庭，并在同一事务内移除成员或家庭。"""
+    stmt = update(User).where(User.default_family_id == family_id)
+    if user_id is not None:
+        stmt = stmt.where(User.id == user_id)
+    await db.execute(stmt.values(default_family_id=None))
+
+
 async def get_family(db: AsyncSession, family_id: int) -> Family | None:
     return await db.get(Family, family_id)
 
