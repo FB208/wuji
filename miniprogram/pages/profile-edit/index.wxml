@@ -1,0 +1,11 @@
+<form class="profile-edit" bindsubmit="onSave">
+  <view class="editor brutal-card">
+    <button class="avatar-button" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar" disabled="{{saving || !ready}}">
+      <image wx:if="{{avatarUrl}}" class="avatar" src="{{avatarUrl}}" mode="aspectFill" />
+      <view wx:else class="avatar avatar-fallback">唔</view>
+    </button>
+    <view class="field-label">昵称</view>
+    <input class="nickname-input" name="nickname" type="nickname" value="{{nickname}}" maxlength="64" placeholder="请输入昵称" disabled="{{saving || !ready}}" />
+  </view>
+  <button class="save-button brutal-pressable" form-type="submit" loading="{{saving}}" disabled="{{saving || !ready}}">保存</button>
+</form>

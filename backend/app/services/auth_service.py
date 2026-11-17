@@ -79,10 +79,6 @@ async def wechat_login(
         await db.commit()
         default_family_id = family.id
     else:
-        if nickname:
-            user.nickname = nickname
-        if avatar_url:
-            user.avatar_url = avatar_url
         families = await repos.list_user_families(db, user.id)
         if families:
             default_family_id = families[0][0].id

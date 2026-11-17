@@ -226,6 +226,7 @@ async def purge_deleted_items(db: AsyncSession, family_id: int, user_id: int) ->
 
 async def delete_account(db: AsyncSession, user_id: int) -> None:
     """账号注销：退出非本人家庭组，解散本人拥有的家庭组（文档 14.3）。"""
+    from app.services.profile_service import delete_owned_avatar
     for family, role in await repos.list_user_families(db, user_id):
         if role == "owner":
             await _dissolve_locked(db, family.id)
@@ -239,5 +240,6 @@ async def delete_account(db: AsyncSession, user_id: int) -> None:
     await repos.delete_idempotency_for_user(db, user_id)
     user = await repos.get_user(db, user_id)
     if user is not None:
+        await delete_owned_avatar(user_id, user.avatar_url)
         await db.delete(user)
     await db.commit()

@@ -194,7 +194,15 @@ async function ensureLogin(options = {}) {
   }
 }
 
+/** 保存资料后使先前的资料读取失效，避免旧响应覆盖新头像和昵称。 */
+function applyProfile(user) {
+  if (!store.user || store.user.id !== user.id) throw authCancelled();
+  meSeq += 1;
+  store.setUser(user);
+}
+
 module.exports = {
+  applyProfile,
   blockAutoLogin,
   unblockAutoLogin,
   wxLogin,

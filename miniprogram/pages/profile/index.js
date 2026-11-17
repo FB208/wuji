@@ -222,6 +222,11 @@ Page({
       if (guard.isCurrent(finishOp)) this.setData({ busy: false });
     }
   },
+  /** 打开账号资料编辑页。 */
+  onEditProfile() {
+    if (!this.active()) return;
+    wx.navigateTo({ url: "/pages/profile-edit/index" });
+  },
   onCopyUserCode() {
     const code = this.data.userCode;
     if (!code) return;
